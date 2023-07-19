@@ -1,37 +1,36 @@
-import process from 'node:process';
-import {Buffer} from 'node:buffer';
-import fs from 'node:fs';
-import {Agent as HttpAgent} from 'node:http';
-import stream, {Readable as ReadableStream, Writable} from 'node:stream';
-import {pipeline as streamPipeline} from 'node:stream/promises';
-import {Readable as Readable2} from 'readable-stream';
+import {promisify} from 'util';
+import fs = require('fs');
+import {PassThrough as PassThroughStream} from 'stream';
+import stream = require('stream');
 import test from 'ava';
-import type {Handler} from 'express';
-import getStream from 'get-stream';
-import {pEvent} from 'p-event';
-import FormData from 'form-data';
+import {Handler} from 'express';
+import toReadableStream = require('to-readable-stream');
+import getStream = require('get-stream');
+import pEvent = require('p-event');
+import FormData = require('form-data');
 import is from '@sindresorhus/is';
-import delay from 'delay';
-import got, {HTTPError, RequestError} from '../source/index.js';
-import withServer from './helpers/with-server.js';
+import got, {RequestError} from '../source';
+import withServer from './helpers/with-server';
+
+const pStreamPipeline = promisify(stream.pipeline);
 
 const defaultHandler: Handler = (_request, response) => {
 	response.writeHead(200, {
 		unicorn: 'rainbow',
-		'content-encoding': 'gzip',
+		'content-encoding': 'gzip'
 	});
 	response.end(Buffer.from('H4sIAAAAAAAA/8vPBgBH3dx5AgAAAA==', 'base64')); // 'ok'
 };
 
 const redirectHandler: Handler = (_request, response) => {
 	response.writeHead(302, {
-		location: '/',
+		location: '/'
 	});
 	response.end();
 };
 
 const postHandler: Handler = async (request, response) => {
-	await streamPipeline(request, response);
+	await pStreamPipeline(request, response);
 };
 
 const errorHandler: Handler = (_request, response) => {
@@ -46,28 +45,6 @@ const headersHandler: Handler = (request, response) => {
 const infiniteHandler: Handler = (_request, response) => {
 	response.write('foobar');
 };
-
-test('reusedSocket getter', withServer, async (t, server, got) => {
-	server.get('/', defaultHandler);
-
-	const agent = new HttpAgent({keepAlive: true});
-
-	const stream = got.stream('', {agent: {http: agent}});
-	t.is(stream.reusedSocket, undefined);
-
-	await pEvent(stream, 'response');
-
-	stream.resume();
-	await pEvent(stream, 'end');
-
-	t.false(stream.reusedSocket);
-
-	const secondStream = got.stream('', {agent: {http: agent}});
-	secondStream.resume();
-	await pEvent(secondStream, 'end');
-
-	t.true(secondStream.reusedSocket);
-});
 
 test('`options.responseType` is ignored', withServer, async (t, server, got) => {
 	server.get('/', defaultHandler);
@@ -92,6 +69,26 @@ test('returns writeable stream', withServer, async (t, server, got) => {
 	t.is(await promise, 'wow');
 });
 
+test('throws on write if body is specified', withServer, (t, server, got) => {
+	server.post('/', postHandler);
+
+	const streams = [
+		got.stream.post({body: 'wow'}),
+		got.stream.post({json: {}}),
+		got.stream.post({form: {}})
+	];
+
+	for (const stream of streams) {
+		t.throws(() => {
+			stream.end('wow');
+		}, {
+			message: 'The payload has been already provided'
+		});
+
+		stream.destroy();
+	}
+});
+
 test('does not throw if using stream and passing a json option', withServer, async (t, server, got) => {
 	server.post('/', postHandler);
 
@@ -102,6 +99,20 @@ test('does not throw if using stream and passing a form option', withServer, asy
 	server.post('/', postHandler);
 
 	await t.notThrowsAsync(getStream(got.stream.post({form: {}})));
+});
+
+test('throws on write if no payload method is present', withServer, (t, server, got) => {
+	server.post('/', postHandler);
+
+	const stream = got.stream.get('');
+
+	t.throws(() => {
+		stream.end('wow');
+	}, {
+		message: 'The payload has been already provided'
+	});
+
+	stream.destroy();
 });
 
 test('has request event', withServer, async (t, server, got) => {
@@ -120,7 +131,7 @@ test('has redirect event', withServer, async (t, server, got) => {
 	server.get('/redirect', redirectHandler);
 
 	const stream = got.stream('redirect');
-	const [, {headers}] = await pEvent(stream, 'redirect', {multiArgs: true});
+	const {headers} = await pEvent(stream, 'redirect');
 	t.is(headers.location, '/');
 
 	await getStream(stream);
@@ -138,8 +149,8 @@ test('has error event', withServer, async (t, server, got) => {
 
 	const stream = got.stream('');
 	await t.throwsAsync(pEvent(stream, 'response'), {
-		instanceOf: HTTPError,
-		message: 'Response code 404 (Not Found)',
+		instanceOf: got.HTTPError,
+		message: 'Response code 404 (Not Found)'
 	});
 });
 
@@ -147,7 +158,7 @@ test('has error event #2', async t => {
 	const stream = got.stream('http://doesntexist');
 	try {
 		await pEvent(stream, 'response');
-	} catch (error: any) {
+	} catch (error) {
 		t.regex(error.code, /ENOTFOUND|EAI_AGAIN/);
 	}
 });
@@ -162,7 +173,7 @@ test('has response event if `options.throwHttpErrors` is false', withServer, asy
 test('accepts `options.body` as a Stream', withServer, async (t, server, got) => {
 	server.post('/', postHandler);
 
-	const stream = got.stream.post({body: ReadableStream.from('wow')});
+	const stream = got.stream.post({body: toReadableStream('wow')});
 	t.is(await getStream(stream), 'wow');
 });
 
@@ -171,7 +182,7 @@ test('redirect response contains old url', withServer, async (t, server, got) =>
 	server.get('/redirect', redirectHandler);
 
 	const {requestUrl} = await pEvent(got.stream('redirect'), 'response');
-	t.is(requestUrl.toString(), `${server.url}/redirect`);
+	t.is(requestUrl, `${server.url}/redirect`);
 });
 
 test('check for pipe method', withServer, (t, server, got) => {
@@ -194,9 +205,9 @@ test('piping works', withServer, async (t, server, got) => {
 test('proxying headers works', withServer, async (t, server, got) => {
 	server.get('/', defaultHandler);
 	server.get('/proxy', async (_request, response) => {
-		await streamPipeline(
+		await pStreamPipeline(
 			got.stream(''),
-			response,
+			response
 		);
 	});
 
@@ -209,17 +220,17 @@ test('proxying headers works', withServer, async (t, server, got) => {
 test('piping server request to Got proxies also headers', withServer, async (t, server, got) => {
 	server.get('/', headersHandler);
 	server.get('/proxy', async (request, response) => {
-		await streamPipeline(
+		await pStreamPipeline(
 			request,
 			got.stream(''),
-			response,
+			response
 		);
 	});
 
 	const {foo}: {foo: string} = await got('proxy', {
 		headers: {
-			foo: 'bar',
-		},
+			foo: 'bar'
+		}
 	}).json();
 	t.is(foo, 'bar');
 });
@@ -229,9 +240,9 @@ test('skips proxying headers after server has sent them already', withServer, as
 	server.get('/proxy', async (_request, response) => {
 		response.writeHead(200);
 
-		await streamPipeline(
+		await pStreamPipeline(
 			got.stream(''),
-			response,
+			response
 		);
 	});
 
@@ -239,16 +250,33 @@ test('skips proxying headers after server has sent them already', withServer, as
 	t.is(headers.unicorn, undefined);
 });
 
+test('throws when trying to proxy through a closed stream', withServer, async (t, server, got) => {
+	server.get('/', defaultHandler);
+
+	const stream = got.stream('');
+	const promise = getStream(stream);
+
+	stream.once('data', () => {
+		t.throws(() => {
+			stream.pipe(new PassThroughStream());
+		}, {
+			message: 'Failed to pipe. The response has been emitted already.'
+		});
+	});
+
+	await promise;
+});
+
 test('proxies `content-encoding` header when `options.decompress` is false', withServer, async (t, server, got) => {
 	server.get('/', defaultHandler);
 	server.get('/proxy', async (_request, response) => {
-		await streamPipeline(
+		await pStreamPipeline(
 			got.stream({decompress: false}),
-			response,
+			response
 		);
 	});
 
-	const {headers} = await got('proxy', {decompress: false});
+	const {headers} = await got('proxy');
 	t.is(headers.unicorn, 'rainbow');
 	t.is(headers['content-encoding'], 'gzip');
 });
@@ -284,14 +312,13 @@ test('piping to got.stream.put()', withServer, async (t, server, got) => {
 	server.put('/post', postHandler);
 
 	await t.notThrowsAsync(async () => {
-		const stream = got.stream.put('post');
-
-		await streamPipeline(
-			got.stream(''),
-			stream,
+		await getStream(
+			stream.pipeline(
+				got.stream(''),
+				got.stream.put('post'),
+				() => {}
+			)
 		);
-
-		await getStream(stream);
 	});
 });
 
@@ -302,23 +329,23 @@ test.skip('no unhandled body stream errors', async t => {
 	body.append('upload', fs.createReadStream('/bin/sh'));
 
 	await t.throwsAsync(got.post(`https://offlinesite${Date.now()}.com`, {
-		body,
+		body
 	}), {
-		code: 'ENOTFOUND',
+		code: 'ENOTFOUND'
 	});
 });
 
 test('works with pipeline', async t => {
-	await t.throwsAsync(streamPipeline(
-		new ReadableStream({
+	await t.throwsAsync(pStreamPipeline(
+		new stream.Readable({
 			read() {
 				this.push(null);
-			},
+			}
 		}),
-		got.stream.put('http://localhost:7777'),
+		got.stream.put('http://localhost:7777')
 	), {
 		instanceOf: RequestError,
-		message: /^connect ECONNREFUSED (127\.0\.0\.1|::1):7777$/,
+		message: 'connect ECONNREFUSED 127.0.0.1:7777'
 	});
 });
 
@@ -330,15 +357,15 @@ test('errors have body', withServer, async (t, server, got) => {
 
 	const error = await t.throwsAsync<RequestError>(getStream(got.stream('', {
 		cookieJar: {
-			async setCookie() {
+			setCookie: async (_, __) => {
 				throw new Error('snap');
 			},
-			getCookieString: async () => '',
-		},
+			getCookieString: async _ => ''
+		}
 	})));
 
-	t.is(error?.message, 'snap');
-	t.is(error?.response?.body, 'yay');
+	t.is(error.message, 'snap');
+	t.is(error.response?.body, 'yay');
 });
 
 test('pipe can send modified headers', withServer, async (t, server, got) => {
@@ -368,7 +395,7 @@ test('the socket is alive on a successful pipeline', withServer, async (t, serve
 	t.is(gotStream.socket, undefined);
 
 	const receiver = new stream.PassThrough();
-	await streamPipeline(gotStream, receiver);
+	await promisify(stream.pipeline)(gotStream, receiver);
 
 	t.is(await getStream(receiver), payload);
 	t.truthy(gotStream.socket);
@@ -392,83 +419,13 @@ test('async iterator works', withServer, async (t, server, got) => {
 	t.is(Buffer.concat(chunks).toString(), payload);
 });
 
-test('destroys only once', async t => {
-	const stream = got.stream('https://example.com');
-	stream.destroy();
-	stream.destroy(new Error('oh no'));
-
-	let errored = false;
-
-	stream.once('error', () => {
-		errored = true;
-	});
-
-	await delay(1);
-
-	t.false(errored);
-});
-
-test('does not accept unreadable stream as body', withServer, async (t, server, got) => {
-	server.post('/', (_request, _response) => {});
-
-	const body = new ReadableStream();
-	body.push(null);
-	body.resume();
-
-	await pEvent(body, 'end');
-
-	const request = got.post({body});
-
-	await t.throwsAsync(request);
-
-	// TODO: Add assert message above.
-});
-
-test('accepts readable-stream as body', withServer, async (t, server, got) => {
-	server.post('/', (request, response) => {
-		request.pipe(response);
-	});
-
-	const body = new Readable2({
-		read() {
-			this.push('ok');
-			this.push(null);
-		},
-	});
-
-	const response = await got.post({
-		// We need to cast body as any,
-		// because @types/readable-stream has incorrect types
-		// and causes a lot of errors.
-		body: body as any,
-	});
-
-	t.is(response.body, 'ok');
-});
-
-test('prevents `Cannot call end` error', async t => {
-	const stream = got.stream('https://example.com', {
-		request: () => new Writable({
-			final() {},
-		}) as any,
-		timeout: {
-			request: 1,
-		},
-	});
-
-	const error: RequestError = await pEvent(stream, 'error');
-	t.is(error.code, 'ETIMEDOUT');
-});
-
-if (Number.parseInt(process.versions.node.split('.')[0]!, 10) <= 12) {
+if (process.versions.node.split('.')[0] <= '12') {
 	test('does not emit end event on error', withServer, async (t, server, got) => {
 		server.get('/', infiniteHandler);
 
 		await t.notThrowsAsync(new Promise((resolve, reject) => {
 			got.stream({
-				timeout: {
-					request: 100,
-				},
+				timeout: 100,
 				hooks: {
 					beforeError: [
 						async error => {
@@ -477,9 +434,9 @@ if (Number.parseInt(process.versions.node.split('.')[0]!, 10) <= 12) {
 							});
 
 							return error;
-						},
-					],
-				},
+						}
+					]
+				}
 			}).once('end', () => {
 				reject(new Error('Stream has ended before erroring'));
 			}).once('error', resolve).resume();
@@ -495,7 +452,7 @@ testFn('it sends a body of file with size on stat = 0', withServer, async (t, se
 	});
 
 	const response = await got.post({
-		body: fs.createReadStream('/proc/cpuinfo'),
+		body: fs.createReadStream('/proc/cpuinfo')
 	});
 
 	t.truthy(response.body);

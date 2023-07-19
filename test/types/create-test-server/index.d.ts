@@ -1,14 +1,12 @@
-import type {Buffer} from 'node:buffer';
-
 declare module 'create-test-server' {
-	import type {Express} from 'express';
+	import {Express} from 'express';
 
 	function createTestServer(options: unknown): Promise<createTestServer.TestServer>;
 
 	export = createTestServer;
 
 	namespace createTestServer {
-		export type TestServer = {
+		export interface TestServer extends Express {
 			caCert: string | Buffer | Array<string | Buffer>;
 			port: number;
 			url: string;
@@ -16,6 +14,6 @@ declare module 'create-test-server' {
 			sslUrl: string;
 
 			close: () => Promise<void>;
-		} & Express;
+		}
 	}
 }

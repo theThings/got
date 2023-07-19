@@ -1,20 +1,16 @@
-import process from 'node:process';
-import {Buffer} from 'node:buffer';
-import {STATUS_CODES, Agent} from 'node:http';
-import os from 'node:os';
-import {isIPv4, isIPv6, isIP} from 'node:net';
+import {STATUS_CODES, Agent} from 'http';
 import test from 'ava';
-import type {Handler} from 'express';
-import nock from 'nock';
-import getStream from 'get-stream';
-import {pEvent} from 'p-event';
-import got, {HTTPError, RequestError, type ReadError} from '../source/index.js';
-import withServer from './helpers/with-server.js';
+import {Handler} from 'express';
+import {isIPv4, isIPv6} from 'net';
+import nock = require('nock');
+import getStream = require('get-stream');
+import pEvent from 'p-event';
+import got, {HTTPError, UnsupportedProtocolError, CancelableRequest, ReadError} from '../source';
+import withServer from './helpers/with-server';
+import os = require('os');
 
-// eslint-disable-next-line @typescript-eslint/naming-convention
 const IPv6supported = Object.values(os.networkInterfaces()).some(iface => iface?.some(addr => !addr.internal && addr.family === 'IPv6'));
 
-// eslint-disable-next-line @typescript-eslint/naming-convention
 const testIPv6 = (IPv6supported && process.env.TRAVIS_DIST !== 'bionic' && process.env.TRAVIS_DIST !== 'focal') ? test : test.skip;
 
 const echoIp: Handler = (request, response) => {
@@ -57,8 +53,8 @@ test('response has `requestUrl` property', withServer, async (t, server, got) =>
 		response.end();
 	});
 
-	t.is((await got('')).requestUrl.toString(), `${server.url}/`);
-	t.is((await got('empty')).requestUrl.toString(), `${server.url}/empty`);
+	t.is((await got('')).requestUrl, `${server.url}/`);
+	t.is((await got('empty')).requestUrl, `${server.url}/empty`);
 });
 
 test('http errors have `response` property', withServer, async (t, server, got) => {
@@ -68,8 +64,8 @@ test('http errors have `response` property', withServer, async (t, server, got) 
 	});
 
 	const error = await t.throwsAsync<HTTPError>(got(''), {instanceOf: HTTPError});
-	t.is(error?.response.statusCode, 404);
-	t.is(error?.response.body, 'not');
+	t.is(error.response.statusCode, 404);
+	t.is(error.response.body, 'not');
 });
 
 test('status code 304 doesn\'t throw', withServer, async (t, server, got) => {
@@ -96,9 +92,9 @@ test('doesn\'t throw if `options.throwHttpErrors` is false', withServer, async (
 
 test('invalid protocol throws', async t => {
 	await t.throwsAsync(got('c:/nope.com').json(), {
-		instanceOf: RequestError,
-		message: 'Unsupported protocol: c:',
+		instanceOf: UnsupportedProtocolError,
 		code: 'ERR_UNSUPPORTED_PROTOCOL',
+		message: 'Unsupported protocol "c:"'
 	});
 });
 
@@ -161,7 +157,7 @@ test('response contains got options', withServer, async (t, server, got) => {
 	{
 		const options = {
 			username: 'foo',
-			password: 'bar',
+			password: 'bar'
 		};
 
 		const {options: normalizedOptions} = (await got(options)).request;
@@ -172,7 +168,7 @@ test('response contains got options', withServer, async (t, server, got) => {
 
 	{
 		const options = {
-			username: 'foo',
+			username: 'foo'
 		};
 
 		const {options: normalizedOptions} = (await got(options)).request;
@@ -183,7 +179,7 @@ test('response contains got options', withServer, async (t, server, got) => {
 
 	{
 		const options = {
-			password: 'bar',
+			password: 'bar'
 		};
 
 		const {options: normalizedOptions} = (await got(options)).request;
@@ -198,8 +194,8 @@ test('socket destroyed by the server throws ECONNRESET', withServer, async (t, s
 		request.socket.destroy();
 	});
 
-	await t.throwsAsync(got('', {retry: {limit: 0}}), {
-		code: 'ECONNRESET',
+	await t.throwsAsync(got('', {retry: 0}), {
+		code: 'ECONNRESET'
 	});
 });
 
@@ -217,7 +213,7 @@ test('the response contains timings property', withServer, async (t, server, got
 test('throws an error if the server aborted the request', withServer, async (t, server, got) => {
 	server.get('/', (_request, response) => {
 		response.writeHead(200, {
-			'content-type': 'text/plain',
+			'content-type': 'text/plain'
 		});
 		response.write('chunk 1');
 
@@ -231,11 +227,11 @@ test('throws an error if the server aborted the request', withServer, async (t, 
 	});
 
 	const error = await t.throwsAsync<ReadError>(got(''), {
-		message: 'The server aborted pending request',
 		code: 'ECONNRESET',
+		message: 'The server aborted pending request'
 	});
 
-	t.truthy(error?.response.retryCount);
+	t.truthy(error.response.retryCount);
 });
 
 test('statusMessage fallback', async t => {
@@ -243,7 +239,7 @@ test('statusMessage fallback', async t => {
 
 	const {statusMessage} = await got('http://statusMessageFallback', {
 		throwHttpErrors: false,
-		retry: {limit: 0},
+		retry: 0
 	});
 
 	t.is(statusMessage, STATUS_CODES[503]);
@@ -257,11 +253,9 @@ test('does not destroy completed requests', withServer, async (t, server, got) =
 
 	const options = {
 		agent: {
-			http: new Agent({keepAlive: true}),
+			http: new Agent({keepAlive: true})
 		},
-		retry: {
-			limit: 0,
-		},
+		retry: 0
 	};
 
 	const stream = got.stream(options);
@@ -302,19 +296,17 @@ test('DNS auto', withServer, async (t, server, got) => {
 	server.get('/ok', echoIp);
 
 	const response = await got('ok', {
-		dnsLookupIpVersion: undefined,
+		dnsLookupIpVersion: 'auto'
 	});
 
-	const version = isIP(response.body);
-
-	t.true(version === 4 || version === 6);
+	t.true(isIPv4(response.body));
 });
 
 test('DNS IPv4', withServer, async (t, server, got) => {
 	server.get('/ok', echoIp);
 
 	const response = await got('ok', {
-		dnsLookupIpVersion: 4,
+		dnsLookupIpVersion: 'ipv4'
 	});
 
 	t.true(isIPv4(response.body));
@@ -325,7 +317,7 @@ testIPv6('DNS IPv6', withServer, async (t, server, got) => {
 	server.get('/ok', echoIp);
 
 	const response = await got('ok', {
-		dnsLookupIpVersion: 6,
+		dnsLookupIpVersion: 'ipv6'
 	});
 
 	t.true(isIPv6(response.body));
@@ -335,20 +327,38 @@ test('invalid `dnsLookupIpVersion`', withServer, async (t, server, got) => {
 	server.get('/ok', echoIp);
 
 	await t.throwsAsync(got('ok', {
-		dnsLookupIpVersion: 'test',
+		dnsLookupIpVersion: 'test'
 	} as any));
 });
 
-test('deprecated `family` option', withServer, async (t, server, got) => {
+test.serial('deprecated `family` option', withServer, async (t, server, got) => {
 	server.get('/', (_request, response) => {
 		response.end('ok');
 	});
 
-	await t.throwsAsync(got({
-		// @ts-expect-error Legacy option
-		family: 4,
-	}), {
-		message: 'Unexpected option: family',
+	await new Promise(resolve => {
+		let request: CancelableRequest;
+		(async () => {
+			const warning = await pEvent(process, 'warning');
+			t.is(warning.name, 'DeprecationWarning');
+			request!.cancel();
+			resolve();
+		})();
+
+		(async () => {
+			request = got({
+				family: '4'
+			} as any);
+
+			try {
+				await request;
+				t.fail();
+			} catch {
+				t.true(request!.isCanceled);
+			}
+
+			resolve();
+		})();
 	});
 });
 
@@ -360,58 +370,6 @@ test('JSON request custom stringifier', withServer, async (t, server, got) => {
 
 	t.deepEqual((await got.post({
 		stringifyJson: customStringify,
-		json: payload,
+		json: payload
 	})).body, customStringify(payload));
-});
-
-test('ClientRequest can throw before promise resolves', async t => {
-	await t.throwsAsync(got('http://example.com', {
-		dnsLookup: ((_hostname: string, _options: unknown, callback: (error: null, hostname: string, family: number) => void) => { // eslint-disable-line @typescript-eslint/ban-types
-			queueMicrotask(() => {
-				callback(null, 'fe80::0000:0000:0000:0000', 6);
-			});
-		}) as any,
-	}), {
-		message: /EINVAL|EHOSTUNREACH|ETIMEDOUT/,
-	});
-});
-
-test('status code 200 has response ok is true', withServer, async (t, server, got) => {
-	server.get('/', (_request, response) => {
-		response.statusCode = 200;
-		response.end();
-	});
-
-	const promise = got('');
-	await t.notThrowsAsync(promise);
-	const {statusCode, body, ok} = await promise;
-	t.true(ok);
-	t.is(statusCode, 200);
-	t.is(body, '');
-});
-
-test('status code 404 has response ok is false if error is not thrown', withServer, async (t, server, got) => {
-	server.get('/', (_request, response) => {
-		response.statusCode = 404;
-		response.end();
-	});
-
-	const promise = got('', {throwHttpErrors: false});
-	await t.notThrowsAsync(promise);
-	const {statusCode, body, ok} = await promise;
-	t.is(ok, false);
-	t.is(statusCode, 404);
-	t.is(body, '');
-});
-
-test('status code 404 has error response ok is false if error is thrown', withServer, async (t, server, got) => {
-	server.get('/', (_request, response) => {
-		response.statusCode = 404;
-		response.end('not');
-	});
-
-	const error = (await t.throwsAsync<HTTPError>(got(''), {instanceOf: HTTPError}))!;
-	t.is(error.response.statusCode, 404);
-	t.is(error.response.ok, false);
-	t.is(error.response.body, 'not');
 });

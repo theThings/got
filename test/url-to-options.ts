@@ -1,10 +1,11 @@
-import {parse as urlParse} from 'node:url';
+import url = require('url');
+import {URL} from 'url';
 import test from 'ava';
-import urlToOptions from '../source/core/utils/url-to-options.js';
+import urlToOptions from '../source/core/utils/url-to-options';
 
 test('converts node legacy URL to options', t => {
 	const exampleUrl = 'https://user:password@github.com:443/say?hello=world#bang';
-	const parsedUrl = urlParse(exampleUrl);
+	const parsedUrl = url.parse(exampleUrl);
 	const options = urlToOptions(parsedUrl);
 	const expected = {
 		hash: '#bang',
@@ -15,7 +16,7 @@ test('converts node legacy URL to options', t => {
 		pathname: '/say',
 		port: 443,
 		protocol: 'https:',
-		search: '?hello=world',
+		search: '?hello=world'
 	};
 
 	t.deepEqual(options, expected);
@@ -34,16 +35,15 @@ test('converts URL to options', t => {
 		path: '/say?hello=world',
 		pathname: '/say',
 		protocol: 'https:',
-		search: '?hello=world',
+		search: '?hello=world'
 	};
 
 	t.deepEqual(options, expected);
 });
 
 test('converts IPv6 URL to options', t => {
-	// eslint-disable-next-line @typescript-eslint/naming-convention
-	const IPv6Url = 'https://[2001:cdba::3257:9652]:443/';
-	const parsedUrl = new URL(IPv6Url);
+	const IPv6URL = 'https://[2001:cdba::3257:9652]:443/';
+	const parsedUrl = new URL(IPv6URL);
 	const options = urlToOptions(parsedUrl);
 	const expected = {
 		hash: '',
@@ -53,15 +53,15 @@ test('converts IPv6 URL to options', t => {
 		path: '/',
 		pathname: '/',
 		protocol: 'https:',
-		search: '',
+		search: ''
 	};
 
 	t.deepEqual(options, expected);
 });
 
 test('only adds port to options for URLs with ports', t => {
-	const noPortUrl = 'https://github.com/';
-	const parsedUrl = new URL(noPortUrl);
+	const noPortURL = 'https://github.com/';
+	const parsedUrl = new URL(noPortURL);
 	const options = urlToOptions(parsedUrl);
 	const expected = {
 		hash: '',
@@ -71,7 +71,7 @@ test('only adds port to options for URLs with ports', t => {
 		path: '/',
 		pathname: '/',
 		protocol: 'https:',
-		search: '',
+		search: ''
 	};
 
 	t.deepEqual(options, expected);
@@ -80,7 +80,7 @@ test('only adds port to options for URLs with ports', t => {
 
 test('does not concat null search to path', t => {
 	const exampleUrl = 'https://github.com/';
-	const parsedUrl = urlParse(exampleUrl);
+	const parsedUrl = url.parse(exampleUrl);
 
 	t.is(parsedUrl.search, null);
 
@@ -93,7 +93,7 @@ test('does not concat null search to path', t => {
 		path: '/',
 		pathname: '/',
 		protocol: 'https:',
-		search: null,
+		search: null
 	};
 
 	t.deepEqual(options, expected);
@@ -101,7 +101,7 @@ test('does not concat null search to path', t => {
 
 test('does not add null port to options', t => {
 	const exampleUrl = 'https://github.com/';
-	const parsedUrl = urlParse(exampleUrl);
+	const parsedUrl = url.parse(exampleUrl);
 
 	t.is(parsedUrl.port, null);
 
@@ -114,7 +114,7 @@ test('does not add null port to options', t => {
 		path: '/',
 		pathname: '/',
 		protocol: 'https:',
-		search: null,
+		search: null
 	};
 
 	t.deepEqual(options, expected);
@@ -127,7 +127,7 @@ test('does not throw if there is no hostname', t => {
 test('null password', t => {
 	const options = urlToOptions({
 		username: 'foo',
-		password: null,
+		password: null
 	} as any);
 
 	t.is(options.auth, 'foo:');
@@ -136,7 +136,7 @@ test('null password', t => {
 test('null username', t => {
 	const options = urlToOptions({
 		username: null,
-		password: 'bar',
+		password: 'bar'
 	} as any);
 
 	t.is(options.auth, ':bar');

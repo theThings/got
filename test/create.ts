@@ -1,22 +1,15 @@
-import {
-	Agent as HttpAgent,
-	request as httpRequest,
-	type IncomingMessage,
-	type RequestOptions,
-} from 'node:http';
+import {Agent as HttpAgent, IncomingMessage, request as httpRequest, RequestOptions} from 'http';
+import {URL} from 'url';
 import test from 'ava';
 import is from '@sindresorhus/is';
-import type {Handler} from 'express';
-import delay from 'delay';
+import {Handler} from 'express';
 import got, {
-	Options,
-	type BeforeRequestHook,
-	type Headers,
-	type Hooks,
-	type OptionsInit,
-	type RequestFunction,
-} from '../source/index.js';
-import withServer from './helpers/with-server.js';
+	BeforeRequestHook,
+	Headers,
+	Hooks,
+	RequestFunction
+} from '../source';
+import withServer from './helpers/with-server';
 
 const echoHeaders: Handler = (request, response) => {
 	request.resume();
@@ -36,8 +29,8 @@ test('supports instance defaults', withServer, async (t, server, got) => {
 
 	const instance = got.extend({
 		headers: {
-			'user-agent': 'custom-ua-string',
-		},
+			'user-agent': 'custom-ua-string'
+		}
 	});
 	const headers = await instance('').json<Headers>();
 	t.is(headers['user-agent'], 'custom-ua-string');
@@ -48,13 +41,13 @@ test('supports invocation overrides', withServer, async (t, server, got) => {
 
 	const instance = got.extend({
 		headers: {
-			'user-agent': 'custom-ua-string',
-		},
+			'user-agent': 'custom-ua-string'
+		}
 	});
 	const headers = await instance({
 		headers: {
-			'user-agent': 'different-ua-string',
-		},
+			'user-agent': 'different-ua-string'
+		}
 	}).json<Headers>();
 	t.is(headers['user-agent'], 'different-ua-string');
 });
@@ -64,13 +57,13 @@ test('carries previous instance defaults', withServer, async (t, server, got) =>
 
 	const instanceA = got.extend({
 		headers: {
-			'x-foo': 'foo',
-		},
+			'x-foo': 'foo'
+		}
 	});
 	const instanceB = instanceA.extend({
 		headers: {
-			'x-bar': 'bar',
-		},
+			'x-bar': 'bar'
+		}
 	});
 	const headers = await instanceB('').json<Headers>();
 	t.is(headers['x-foo'], 'foo');
@@ -88,14 +81,19 @@ test('custom headers (extend)', withServer, async (t, server, got) => {
 });
 
 test('extend overwrites arrays with a deep clone', t => {
-	const x = () => {};
-	const y = () => {};
-
-	const beforeRequest = [x];
+	const beforeRequest = [0];
 	const a = got.extend({hooks: {beforeRequest} as unknown as Hooks});
-	beforeRequest[0] = y;
-	t.deepEqual(a.defaults.options.hooks.beforeRequest, [x] as unknown as BeforeRequestHook[]);
+	beforeRequest[0] = 1;
+	t.deepEqual(a.defaults.options.hooks.beforeRequest, [0] as unknown as BeforeRequestHook[]);
 	t.not(a.defaults.options.hooks.beforeRequest, beforeRequest as unknown as BeforeRequestHook[]);
+});
+
+test('extend keeps the old value if the new one is undefined', t => {
+	const a = got.extend({headers: undefined});
+	t.deepEqual(
+		a.defaults.options.headers,
+		got.defaults.options.headers
+	);
 });
 
 test('hooks are merged on got.extend()', t => {
@@ -105,7 +103,7 @@ test('hooks are merged on got.extend()', t => {
 	const instanceA = got.extend({hooks: {beforeRequest: hooksA}});
 
 	const extended = instanceA.extend({hooks: {beforeRequest: hooksB}});
-	t.deepEqual(extended.defaults.options.hooks.beforeRequest, [...hooksA, ...hooksB]);
+	t.deepEqual(extended.defaults.options.hooks.beforeRequest, hooksA.concat(hooksB));
 });
 
 test('custom endpoint with custom headers (extend)', withServer, async (t, server) => {
@@ -125,31 +123,31 @@ test('no tampering with defaults', t => {
 	t.is(got.defaults.options.prefixUrl, '');
 });
 
-test('can set defaults to `new Options(...)`', t => {
+test('can set defaults to `got.mergeOptions(...)`', t => {
 	const instance = got.extend({
 		mutableDefaults: true,
-		followRedirect: false,
+		followRedirect: false
 	});
 
 	t.notThrows(() => {
-		instance.defaults.options = new Options({
-			followRedirect: false,
-		}, undefined, instance.defaults.options);
-	});
-
-	t.false(instance.defaults.options.followRedirect);
-
-	t.notThrows(() => {
-		instance.defaults.options = new Options({});
+		instance.defaults.options = got.mergeOptions(instance.defaults.options, {
+			followRedirect: true
+		});
 	});
 
 	t.true(instance.defaults.options.followRedirect);
+
+	t.notThrows(() => {
+		instance.defaults.options = got.mergeOptions({});
+	});
+
+	t.is(instance.defaults.options.followRedirect, undefined);
 });
 
 test('can set mutable defaults using got.extend', t => {
 	const instance = got.extend({
 		mutableDefaults: true,
-		followRedirect: false,
+		followRedirect: false
 	});
 
 	t.notThrows(() => {
@@ -164,9 +162,9 @@ test('only plain objects are freezed', withServer, async (t, server, got) => {
 
 	const instance = got.extend({
 		agent: {
-			http: new HttpAgent({keepAlive: true}),
+			http: new HttpAgent({keepAlive: true})
 		},
-		mutableDefaults: true,
+		mutableDefaults: true
 	});
 
 	t.notThrows(() => {
@@ -174,21 +172,18 @@ test('only plain objects are freezed', withServer, async (t, server, got) => {
 	});
 });
 
-// eslint-disable-next-line ava/no-skip-test
-test.skip('defaults are cloned on instance creation', t => {
-	const options: OptionsInit = {hooks: {beforeRequest: [() => {}]}};
+test('defaults are cloned on instance creation', t => {
+	const options = {foo: 'bar', hooks: {beforeRequest: [() => {}]}};
 	const instance = got.extend(options);
-	const context = {
-		foo: {},
-	};
 
 	t.notThrows(() => {
-		options.context = context;
-		delete options.hooks!.beforeRequest![0];
+		options.foo = 'foo';
+		delete options.hooks.beforeRequest[0];
 	});
 
-	t.not(options.context!.foo, instance.defaults.options.context.foo);
-	t.not(options.hooks!.beforeRequest, instance.defaults.options.hooks.beforeRequest);
+	// @ts-expect-error This IS correct
+	t.not(options.foo, instance.defaults.options.foo);
+	t.not(options.hooks.beforeRequest, instance.defaults.options.hooks.beforeRequest);
 });
 
 test('ability to pass a custom request method', withServer, async (t, server, got) => {
@@ -199,7 +194,7 @@ test('ability to pass a custom request method', withServer, async (t, server, go
 	const request: RequestFunction = (...args: [
 		string | URL | RequestOptions,
 		(RequestOptions | ((response: IncomingMessage) => void))?,
-		((response: IncomingMessage) => void)?,
+		((response: IncomingMessage) => void)?
 	]) => {
 		isCalled = true;
 		// @ts-expect-error Overload error
@@ -220,7 +215,7 @@ test('does not include the `request` option in normalized `http` options', withS
 	const request: RequestFunction = (...args: [
 		string | URL | RequestOptions,
 		(RequestOptions | ((response: IncomingMessage) => void))?,
-		((response: IncomingMessage) => void)?,
+		((response: IncomingMessage) => void)?
 	]) => {
 		isCalled = true;
 
@@ -241,23 +236,17 @@ test('should pass an options object into an initialization hook after .extend', 
 
 	server.get('/', echoHeaders);
 
-	let first = true;
-
 	const instance = got.extend({
 		hooks: {
 			init: [
 				options => {
-					if (!first) {
-						t.deepEqual(options, {});
-					}
-
-					first = false;
-				},
-			],
-		},
+					t.deepEqual(options, {});
+				}
+			]
+		}
 	});
 
-	await instance('', {});
+	await instance('');
 });
 
 test('hooks aren\'t overriden when merging options', withServer, async (t, server, got) => {
@@ -269,9 +258,9 @@ test('hooks aren\'t overriden when merging options', withServer, async (t, serve
 			beforeRequest: [
 				() => {
 					isCalled = true;
-				},
-			],
-		},
+				}
+			]
+		}
 	});
 
 	await instance({});
@@ -287,8 +276,8 @@ test('extend with custom handlers', withServer, async (t, server, got) => {
 			(options, next) => {
 				options.headers.unicorn = 'rainbow';
 				return next(options);
-			},
-		],
+			}
+		]
 	});
 	const headers = await instance('').json<Headers>();
 	t.is(headers.unicorn, 'rainbow');
@@ -312,20 +301,14 @@ test('async handlers', withServer, async (t, server, got) => {
 
 	const instance = got.extend({
 		handlers: [
-			(options, next) => {
-				if (options.isStream) {
-					return next(options);
-				}
+			async (options, next) => {
+				const result = await next(options);
+				// @ts-expect-error Manual tests
+				result.modified = true;
 
-				return (async () => {
-					const result = await next(options);
-					// @ts-expect-error Manual tests
-					result.modified = true;
-
-					return result;
-				})();
-			},
-		],
+				return result;
+			}
+		]
 	});
 
 	const promise = instance('');
@@ -341,60 +324,21 @@ test('async handlers can throw', async t => {
 		handlers: [
 			async () => {
 				throw new Error(message);
-			},
-		],
+			}
+		]
 	});
 
-	await t.throwsAsync(instance('https://example.com'), {
-		instanceOf: Error,
-		message,
-	});
+	await t.throwsAsync(instance('https://example.com'), {message});
 });
 
 test('setting dnsCache to true points to global cache', t => {
 	const a = got.extend({
-		dnsCache: true,
+		dnsCache: true
 	});
 
 	const b = got.extend({
-		dnsCache: true,
+		dnsCache: true
 	});
 
 	t.is(a.defaults.options.dnsCache, b.defaults.options.dnsCache);
-});
-
-test('waits for handlers to finish', withServer, async (t, server, got) => {
-	server.get('/', echoHeaders);
-
-	const instance = got.extend({
-		handlers: [
-			async (options, next) => {
-				await delay(1000);
-				return next(options);
-			},
-			async (options, next) => {
-				options.headers.foo = 'bar';
-				return next(options);
-			},
-		],
-	});
-
-	const {foo} = await instance('').json<{foo: 'bar'}>();
-	t.is(foo, 'bar');
-});
-
-test('does not append to internal _init on new requests', withServer, async (t, server, got) => {
-	server.get('/', echoHeaders);
-
-	const instance = got.extend({
-		mutableDefaults: true,
-	});
-
-	const {length} = (instance.defaults.options as any)._init;
-
-	await got('', {
-		context: {},
-	});
-
-	t.is((instance.defaults.options as any)._init.length, length);
 });

@@ -1,25 +1,25 @@
-import type {EventEmitter} from 'node:events';
+import {EventEmitter} from 'events';
 
 type Origin = EventEmitter;
 type Event = string | symbol;
 type Fn = (...args: any[]) => void;
 
-type Handler = {
+interface Handler {
 	origin: Origin;
 	event: Event;
 	fn: Fn;
-};
+}
 
-type Unhandler = {
+interface Unhandler {
 	once: (origin: Origin, event: Event, fn: Fn) => void;
 	unhandleAll: () => void;
-};
+}
 
 // When attaching listeners, it's very easy to forget about them.
 // Especially if you do error handling and set timeouts.
 // So instead of checking if it's proper to throw an error on every timeout ever,
 // use this simple tool which will remove all listeners you have attached.
-export default function unhandle(): Unhandler {
+export default (): Unhandler => {
 	const handlers: Handler[] = [];
 
 	return {
@@ -35,6 +35,6 @@ export default function unhandle(): Unhandler {
 			}
 
 			handlers.length = 0;
-		},
+		}
 	};
-}
+};

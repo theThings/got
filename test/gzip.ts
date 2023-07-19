@@ -1,10 +1,9 @@
-import {Buffer} from 'node:buffer';
-import {promisify} from 'node:util';
-import zlib from 'node:zlib';
+import {promisify} from 'util';
+import zlib = require('zlib');
 import test from 'ava';
-import getStream from 'get-stream';
-import {ReadError, type HTTPError} from '../source/index.js';
-import withServer from './helpers/with-server.js';
+import getStream = require('get-stream');
+import withServer from './helpers/with-server';
+import {HTTPError, ReadError} from '../source';
 
 const testContent = 'Compressible response content.\n';
 const testContentUncompressed = 'Uncompressed response content.\n';
@@ -32,7 +31,7 @@ test('decompress content on error', withServer, async (t, server, got) => {
 
 	const error = await t.throwsAsync<HTTPError>(got(''));
 
-	t.is(error?.response.body, testContent);
+	t.is(error.response.body, testContent);
 });
 
 test('decompress content - stream', withServer, async (t, server, got) => {
@@ -52,7 +51,7 @@ test('handles gzip error', withServer, async (t, server, got) => {
 
 	await t.throwsAsync(got(''), {
 		name: 'ReadError',
-		message: 'incorrect header check',
+		message: 'incorrect header check'
 	});
 });
 
@@ -64,8 +63,7 @@ test('no unhandled `Premature close` error', withServer, async (t, server, got) 
 
 	await t.throwsAsync(got(''), {
 		name: 'ReadError',
-		// `The server aborted pending request` on Node.js 15 or later.
-		message: /incorrect header check|The server aborted pending request/,
+		message: 'incorrect header check'
 	});
 });
 
@@ -77,7 +75,7 @@ test('handles gzip error - stream', withServer, async (t, server, got) => {
 
 	await t.throwsAsync(getStream(got.stream('')), {
 		name: 'ReadError',
-		message: 'incorrect header check',
+		message: 'incorrect header check'
 	});
 });
 
@@ -125,7 +123,7 @@ test('does not ignore missing data', withServer, async (t, server, got) => {
 
 	await t.throwsAsync(got(''), {
 		instanceOf: ReadError,
-		message: 'unexpected end of file',
+		message: 'unexpected end of file'
 	});
 });
 

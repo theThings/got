@@ -1,22 +1,22 @@
-import type {UrlWithStringQuery} from 'node:url';
+import {URL, UrlWithStringQuery} from 'url';
 import is from '@sindresorhus/is';
 
 // TODO: Deprecate legacy URL at some point
 
-export type LegacyUrlOptions = {
+export interface LegacyUrlOptions {
 	protocol: string;
 	hostname: string;
 	host: string;
-	hash: string | null; // eslint-disable-line @typescript-eslint/ban-types
-	search: string | null; // eslint-disable-line @typescript-eslint/ban-types
+	hash: string | null;
+	search: string | null;
 	pathname: string;
 	href: string;
 	path: string;
 	port?: number;
 	auth?: string;
-};
+}
 
-export default function urlToOptions(url: URL | UrlWithStringQuery): LegacyUrlOptions {
+export default (url: URL | UrlWithStringQuery): LegacyUrlOptions => {
 	// Cast to URL
 	url = url as URL;
 
@@ -28,7 +28,7 @@ export default function urlToOptions(url: URL | UrlWithStringQuery): LegacyUrlOp
 		search: url.search,
 		pathname: url.pathname,
 		href: url.href,
-		path: `${url.pathname || ''}${url.search || ''}`,
+		path: `${url.pathname || ''}${url.search || ''}`
 	};
 
 	if (is.string(url.port) && url.port.length > 0) {
@@ -40,4 +40,4 @@ export default function urlToOptions(url: URL | UrlWithStringQuery): LegacyUrlOp
 	}
 
 	return options;
-}
+};

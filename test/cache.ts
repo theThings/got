@@ -1,18 +1,13 @@
-import {Buffer} from 'node:buffer';
-import {promisify} from 'node:util';
-import {Readable as ReadableStream} from 'node:stream';
-import {Agent} from 'node:http';
-import {gzip} from 'node:zlib';
-import process from 'node:process';
+import {promisify} from 'util';
+import {gzip} from 'zlib';
 import test from 'ava';
-import {pEvent} from 'p-event';
-import getStream from 'get-stream';
-import type {Handler} from 'express';
-import nock from 'nock';
+import pEvent = require('p-event');
+import getStream = require('get-stream');
+import {Handler} from 'express';
+import got, {Response} from '../source';
+import withServer from './helpers/with-server';
 import CacheableLookup from 'cacheable-lookup';
-import delay from 'delay';
-import got, {CacheError, type Response} from '../source/index.js';
-import withServer from './helpers/with-server.js';
+import delay = require('delay');
 
 const cacheEndpoint: Handler = (_request, response) => {
 	response.setHeader('Cache-Control', 'public, max-age=60');
@@ -44,34 +39,6 @@ test('cacheable responses are cached', withServer, async (t, server, got) => {
 
 	t.is(cache.size, 1);
 	t.is(firstResponse.body, secondResponse.body);
-});
-
-test('cacheable responses to POST requests are cached', withServer, async (t, server, got) => {
-	server.post('/', cacheEndpoint);
-
-	const cache = new Map();
-
-	const firstResponse = await got({method: 'POST', body: 'test', cache});
-	const secondResponse = await got({method: 'POST', body: 'test', cache});
-
-	t.is(cache.size, 1);
-	t.is(firstResponse.body, secondResponse.body);
-});
-
-test('non-cacheable responses to POST requests are not cached', withServer, async (t, server, got) => {
-	server.post('/', cacheEndpoint);
-
-	const cache = new Map();
-
-	// POST requests with streams are not cached
-	const body1 = ReadableStream.from(Buffer.from([1, 2, 3]));
-	const body2 = ReadableStream.from(Buffer.from([1, 2, 3]));
-
-	const firstResponseInt = Number((await got({method: 'POST', body: body1, cache})).body);
-	const secondResponseInt = Number((await got({method: 'POST', body: body2, cache})).body);
-
-	t.is(cache.size, 0);
-	t.true(firstResponseInt < secondResponseInt);
 });
 
 test('cached response is re-encoded to current encoding option', withServer, async (t, server, got) => {
@@ -118,16 +85,16 @@ test('redirects are cached and re-used internally', withServer, async (t, server
 	server.get('/', cacheEndpoint);
 
 	const cache = new Map();
-	const a1 = await got('301', {cache});
-	const b1 = await got('302', {cache});
+	const A1 = await got('301', {cache});
+	const B1 = await got('302', {cache});
 
-	const a2 = await got('301', {cache});
-	const b2 = await got('302', {cache});
+	const A2 = await got('301', {cache});
+	const B2 = await got('302', {cache});
 
 	t.is(cache.size, 3);
-	t.is(a1.body, b1.body);
-	t.is(a1.body, a2.body);
-	t.is(b1.body, b2.body);
+	t.is(A1.body, B1.body);
+	t.is(A1.body, A2.body);
+	t.is(B1.body, B2.body);
 });
 
 test('cached response has got options', withServer, async (t, server, got) => {
@@ -136,7 +103,7 @@ test('cached response has got options', withServer, async (t, server, got) => {
 	const cache = new Map();
 	const options = {
 		username: 'foo',
-		cache,
+		cache
 	};
 
 	await got(options);
@@ -145,7 +112,7 @@ test('cached response has got options', withServer, async (t, server, got) => {
 	t.is(secondResponse.request.options.username, options.username);
 });
 
-test('cache error throws `CacheError`', withServer, async (t, server, got) => {
+test('cache error throws `got.CacheError`', withServer, async (t, server, got) => {
 	server.get('/', (_request, response) => {
 		response.end('ok');
 	});
@@ -154,8 +121,8 @@ test('cache error throws `CacheError`', withServer, async (t, server, got) => {
 
 	// @ts-expect-error Error tests
 	await t.throwsAsync(got({cache}), {
-		instanceOf: CacheError,
-		code: 'ERR_CACHE_ACCESS',
+		instanceOf: got.CacheError,
+		code: 'ERR_CACHE_ACCESS'
 	});
 });
 
@@ -181,12 +148,12 @@ test('doesn\'t cache response when received HTTP error', withServer, async (t, s
 
 test('DNS cache works', async t => {
 	const instance = got.extend({
-		dnsCache: true,
+		dnsCache: true
 	});
 
 	await t.notThrowsAsync(instance('https://example.com'));
 
-	// @ts-expect-error Accessing private property
+	// @ts-expect-error
 	t.is(instance.defaults.options.dnsCache!._cache.size, 1);
 });
 
@@ -260,7 +227,7 @@ test('does not break POST requests', withServer, async (t, server, got) => {
 
 	const headers = await got.post('', {
 		body: '',
-		cache: new Map(),
+		cache: new Map()
 	}).json<{'content-length': string}>();
 
 	t.is(headers['content-length'], '0');
@@ -292,9 +259,7 @@ test('decompresses cached responses', withServer, async (t, server, got) => {
 			cache,
 			responseType: 'json',
 			decompress: true,
-			retry: {
-				limit: 2,
-			},
+			retry: 2
 		}));
 	}
 
@@ -309,7 +274,7 @@ test('can replace the instance\'s HTTP cache', withServer, async (t, server, got
 
 	const instance = got.extend({
 		mutableDefaults: true,
-		cache,
+		cache
 	});
 
 	await t.notThrowsAsync(instance(''));
@@ -342,7 +307,7 @@ test('does not hang on huge response', withServer, async (t, server, got) => {
 	});
 
 	const body = await got('', {
-		cache: new Map(),
+		cache: new Map()
 	}).buffer();
 
 	t.is(body.length, bufferSize * times);
@@ -357,7 +322,7 @@ test('cached response ETag', withServer, async (t, server, got) => {
 			response.writeHead(304);
 			response.end();
 		} else {
-			response.writeHead(200, {etag});
+			response.writeHead(200, {ETag: etag});
 			response.end(body);
 		}
 	});
@@ -379,241 +344,23 @@ test('cached response ETag', withServer, async (t, server, got) => {
 	t.is(cachedResponse.body, body);
 });
 
-// TODO: The test is flaky.
-// test('works with http2', async t => {
-// 	const cache = new Map();
+test('works with http2', async t => {
+	const cache = new Map();
 
-// 	const client = got.extend({
-// 		http2: true,
-// 		cache,
-// 	});
+	const client = got.extend({
+		http2: true,
+		cache
+	});
 
-// 	try {
-// 		await client('https://httpbin.org/anything');
-
-// 		t.pass();
-// 	} catch (error: any) {
-// 		if (error.message.includes('install Node.js')) {
-// 			t.pass();
-// 			return;
-// 		}
-
-// 		t.fail(error.message);
-// 	}
-// });
+	await t.notThrowsAsync(client('https://httpbin.org/anything'));
+});
 
 test('http-cache-semantics typings', t => {
 	const instance = got.extend({
 		cacheOptions: {
-			shared: false,
-		},
+			shared: false
+		}
 	});
 
 	t.is(instance.defaults.options.cacheOptions.shared, false);
-});
-
-test('allows internal modifications', async t => {
-	nock('http://example.com').get('/test').reply(401);
-	nock('http://example.com').get('/test').reply(200, JSON.stringify({
-		wat: ['123'],
-	}));
-
-	const client = got.extend({
-		cache: new Map(),
-		hooks: {
-			afterResponse: [
-				async (response, retryWithMergedOptions) => {
-					if (response.statusCode === 401) {
-						return retryWithMergedOptions({});
-					}
-
-					return response;
-				},
-			],
-		},
-	});
-
-	await t.notThrowsAsync(client.get('http://example.com/test'));
-});
-
-test('response.complete is true when using keepalive agent', withServer, async (t, server, got) => {
-	const agent = {
-		http: new Agent({keepAlive: true}),
-	};
-
-	const etag = 'foobar';
-
-	const payload = JSON.stringify({foo: 'bar'});
-	const compressed = await promisify(gzip)(payload);
-
-	server.get('/', (request, response) => {
-		if (request.headers['if-none-match'] === etag) {
-			response.statusCode = 304;
-			response.end();
-		} else {
-			response.setHeader('content-encoding', 'gzip');
-			response.setHeader('cache-control', 'public, max-age=60');
-			response.setHeader('etag', etag);
-			response.end(compressed);
-		}
-	});
-
-	const cache = new Map();
-
-	const first = await got({
-		cache,
-		responseType: 'json',
-		decompress: true,
-		retry: {
-			limit: 2,
-		},
-		agent,
-	});
-
-	t.true(first.complete);
-});
-
-test.failing('revalidated uncompressed responses are retrieved from cache', withServer, async (t, server, got) => {
-	let revalidated = false;
-
-	const payload = JSON.stringify([1]);
-
-	server.get('/', (request, response) => {
-		if (request.headers['if-none-match'] === 'asdf') {
-			revalidated = true;
-			response.writeHead(304, {etag: 'asdf'});
-			response.end();
-		} else {
-			response.writeHead(200, {
-				etag: 'asdf',
-				'cache-control': 'public, max-age=1, s-maxage=1',
-				'content-type': 'application/json',
-			});
-			response.write(payload);
-			response.end();
-		}
-	});
-
-	t.timeout(5000);
-
-	const client = got.extend({cache: new Map(), responseType: 'json'});
-
-	await client('').then(response => {
-		t.false(revalidated);
-		t.deepEqual(response.body, [1]);
-		t.true(response.complete);
-	});
-
-	// eslint-disable-next-line no-promise-executor-return
-	await new Promise(resolve => setTimeout(resolve, 3000));
-
-	console.log('max-age has expired, performing second request');
-
-	await client('').then(response => {
-		t.true(revalidated);
-		t.deepEqual(response.body, [1]);
-		t.true(response.complete); // Fails here.
-	});
-});
-
-test.failing('revalidated compressed responses are retrieved from cache', withServer, async (t, server, got) => {
-	let revalidated = false;
-
-	const payload = JSON.stringify([1]);
-	const compressed = await promisify(gzip)(payload);
-
-	server.get('/', (request, response) => {
-		if (request.headers['if-none-match'] === 'asdf') {
-			revalidated = true;
-			response.writeHead(304, {etag: 'asdf'});
-			response.end();
-		} else {
-			response.writeHead(200, {
-				etag: 'asdf',
-				'cache-control': 'public, max-age=1, s-maxage=1',
-				'content-type': 'application/json',
-				'content-encoding': 'gzip',
-			});
-			response.write(compressed);
-			response.end();
-		}
-	});
-
-	t.timeout(5000);
-
-	const client = got.extend({cache: new Map(), responseType: 'json'});
-
-	await client('').then(response => {
-		t.false(revalidated);
-		t.deepEqual(response.body, [1]);
-		t.true(response.complete);
-	});
-
-	// eslint-disable-next-line no-promise-executor-return
-	await new Promise(resolve => setTimeout(resolve, 3000));
-
-	console.log('max-age has expired, performing second request (but it will actually hang)');
-
-	await client('').then(response => {
-		t.true(revalidated);
-		t.deepEqual(response.body, [1]);
-		t.true(response.complete);
-	});
-});
-
-// eslint-disable-next-line ava/no-skip-test -- Unreliable
-test.skip('revalidated uncompressed responses from github are retrieved from cache', async t => {
-	const client = got.extend({
-		cache: new Map(),
-		cacheOptions: {shared: false},
-		responseType: 'json',
-		headers: {
-			'accept-encoding': 'identity',
-			...(process.env.GITHUB_TOKEN ? {authorization: `token ${process.env.GITHUB_TOKEN}`} : {}),
-		},
-	});
-
-	t.timeout(70_000);
-
-	await client('https://api.github.com/repos/octocat/Spoon-Knife').then(response => {
-		t.is((response.body as any).name, 'Spoon-Knife');
-		t.true(response.complete);
-	});
-
-	// eslint-disable-next-line no-promise-executor-return
-	await new Promise(resolve => setTimeout(resolve, 65_000));
-
-	console.log('max-age has expired, performing second request');
-
-	await client('https://api.github.com/repos/octocat/Spoon-Knife').then(response => {
-		t.is((response.body as any).name, 'Spoon-Knife');
-		t.true(response.complete); // Fails here.
-	});
-});
-
-// eslint-disable-next-line ava/no-skip-test -- Unreliable
-test.skip('revalidated compressed responses from github are retrieved from cache', async t => {
-	const client = got.extend({
-		cache: new Map(),
-		cacheOptions: {shared: false},
-		responseType: 'json',
-		headers: process.env.GITHUB_TOKEN ? {authorization: `token ${process.env.GITHUB_TOKEN}`} : {},
-	});
-
-	t.timeout(70_000);
-
-	await client('https://api.github.com/repos/octocat/Spoon-Knife').then(response => {
-		t.is((response.body as any).name, 'Spoon-Knife');
-		t.true(response.complete);
-	});
-
-	// eslint-disable-next-line no-promise-executor-return
-	await new Promise(resolve => setTimeout(resolve, 65_000));
-
-	console.log('max-age has expired, performing second request (but it will actually hang)');
-
-	await client('https://api.github.com/repos/octocat/Spoon-Knife').then(response => {
-		t.is((response.body as any).name, 'Spoon-Knife');
-		t.true(response.complete);
-	});
 });

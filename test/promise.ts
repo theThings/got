@@ -1,9 +1,8 @@
-import {Buffer} from 'node:buffer';
-import {ReadStream} from 'node:fs';
-import {ClientRequest, IncomingMessage} from 'node:http';
+import {ReadStream} from 'fs';
+import {ClientRequest, IncomingMessage} from 'http';
 import test from 'ava';
-import {type Response, CancelError} from '../source/index.js';
-import withServer from './helpers/with-server.js';
+import {Response, CancelError} from '../source';
+import withServer from './helpers/with-server';
 
 test('emits request event as promise', withServer, async (t, server, got) => {
 	server.get('/', (_request, response) => {
@@ -24,9 +23,9 @@ test('emits response event as promise', withServer, async (t, server, got) => {
 
 	await got('').json().on('response', (response: Response) => {
 		t.true(response instanceof IncomingMessage);
-		t.false(response.readable);
+		t.true(response.readable);
 		t.is(response.statusCode, 200);
-		t.true(response.ip === '127.0.0.1' || response.ip === '::1');
+		t.is(response.ip, '127.0.0.1');
 	});
 });
 
@@ -64,22 +63,22 @@ test('promise.json() can be called before a file stream body is open', withServe
 	// @ts-expect-error @types/node has wrong types.
 	const body = new ReadStream('', {
 		fs: {
-			open() {},
-			read() {},
-			close() {},
-		},
+			open: () => {},
+			read: () => {},
+			close: () => {}
+		}
 	});
 
 	const promise = got({body});
 	const checks = [
 		t.throwsAsync(promise, {
 			instanceOf: CancelError,
-			code: 'ERR_CANCELED',
+			code: 'ERR_CANCELED'
 		}),
 		t.throwsAsync(promise.json(), {
 			instanceOf: CancelError,
-			code: 'ERR_CANCELED',
-		}),
+			code: 'ERR_CANCELED'
+		})
 	];
 
 	promise.cancel();
@@ -87,7 +86,7 @@ test('promise.json() can be called before a file stream body is open', withServe
 	await Promise.all(checks);
 });
 
-test('promise.json() does not fail when server returns an error', withServer, async (t, server, got) => {
+test('promise.json() does not fail when server returns an error and throwHttpErrors is disabled', withServer, async (t, server, got) => {
 	server.get('/', (_request, response) => {
 		response.statusCode = 400;
 		response.end('{}');
@@ -95,4 +94,15 @@ test('promise.json() does not fail when server returns an error', withServer, as
 
 	const promise = got('', {throwHttpErrors: false});
 	await t.notThrowsAsync(promise.json());
+});
+
+test('the request is destroyed once the promise has resolved', withServer, async (t, server, got) => {
+	server.get('/', (_request, response) => {
+		response.statusCode = 200;
+		response.end('null');
+	});
+
+	const {request} = await got('');
+
+	t.true(request.destroyed);
 });

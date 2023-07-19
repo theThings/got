@@ -1,24 +1,22 @@
-import type {EventEmitter} from 'node:events';
+import {EventEmitter} from 'events';
 
 type Fn = (...args: unknown[]) => void;
 type Fns = Record<string, Fn>;
 
-export default function proxyEvents(from: EventEmitter, to: EventEmitter, events: Readonly<string[]>): () => void {
-	const eventFunctions: Fns = {};
+export default function (from: EventEmitter, to: EventEmitter, events: string[]): () => void {
+	const fns: Fns = {};
 
 	for (const event of events) {
-		const eventFunction = (...args: unknown[]) => {
+		fns[event] = (...args: unknown[]) => {
 			to.emit(event, ...args);
 		};
 
-		eventFunctions[event] = eventFunction;
-
-		from.on(event, eventFunction);
+		from.on(event, fns[event]);
 	}
 
 	return () => {
-		for (const [event, eventFunction] of Object.entries(eventFunctions)) {
-			from.off(event, eventFunction);
+		for (const event of events) {
+			from.off(event, fns[event]);
 		}
 	};
 }

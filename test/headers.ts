@@ -1,14 +1,11 @@
-import process from 'node:process';
-import {Buffer} from 'node:buffer';
-import fs from 'node:fs';
-import path from 'node:path';
+import fs = require('fs');
+import {promisify} from 'util';
+import path = require('path');
 import test from 'ava';
-import type {Handler} from 'express';
-import FormData from 'form-data';
-import {FormDataEncoder} from 'form-data-encoder';
-import {FormData as FormDataNode} from 'formdata-node';
-import got, {type Headers} from '../source/index.js';
-import withServer from './helpers/with-server.js';
+import {Handler} from 'express';
+import FormData = require('form-data');
+import got, {Headers} from '../source';
+import withServer from './helpers/with-server';
 
 const supportsBrotli = typeof (process.versions as any).brotli === 'string';
 
@@ -36,8 +33,8 @@ test('does not override provided `accept-encoding`', withServer, async (t, serve
 
 	const headers = await got({
 		headers: {
-			'accept-encoding': 'gzip',
-		},
+			'accept-encoding': 'gzip'
+		}
 	}).json<Headers>();
 	t.is(headers['accept-encoding'], 'gzip');
 });
@@ -49,8 +46,8 @@ test('does not remove user headers from `url` object argument', withServer, asyn
 		url: `http://${server.hostname}:${server.port}`,
 		responseType: 'json',
 		headers: {
-			'X-Request-Id': 'value',
-		},
+			'X-Request-Id': 'value'
+		}
 	})).body;
 
 	t.is(headers.accept, 'application/json');
@@ -63,7 +60,7 @@ test('does not set `accept-encoding` header when `options.decompress` is false',
 	server.get('/', echoHeaders);
 
 	const headers = await got({
-		decompress: false,
+		decompress: false
 	}).json();
 	// @ts-expect-error Error tests
 	t.false(Reflect.has(headers, 'accept-encoding'));
@@ -77,8 +74,8 @@ test('`accept` header with `json` option', withServer, async (t, server, got) =>
 
 	headers = await got({
 		headers: {
-			accept: '',
-		},
+			accept: ''
+		}
 	}).json<Headers>();
 	t.is(headers.accept, '');
 });
@@ -95,9 +92,9 @@ test('transforms names to lowercase', withServer, async (t, server, got) => {
 
 	const headers = (await got<Headers>({
 		headers: {
-			'ACCEPT-ENCODING': 'identity',
+			'ACCEPT-ENCODING': 'identity'
 		},
-		responseType: 'json',
+		responseType: 'json'
 	})).body;
 	t.is(headers['accept-encoding'], 'identity');
 });
@@ -107,9 +104,9 @@ test('setting `content-length` to 0', withServer, async (t, server, got) => {
 
 	const {body} = await got.post({
 		headers: {
-			'content-length': '0',
+			'content-length': '0'
 		},
-		body: 'sup',
+		body: 'sup'
 	});
 	const headers = JSON.parse(body);
 	t.is(headers['content-length'], '0');
@@ -119,7 +116,7 @@ test('sets `content-length` to `0` when requesting PUT with empty body', withSer
 	server.put('/', echoHeaders);
 
 	const {body} = await got({
-		method: 'PUT',
+		method: 'PUT'
 	});
 	const headers = JSON.parse(body);
 	t.is(headers['content-length'], '0');
@@ -130,11 +127,11 @@ test('form manual `content-type` header', withServer, async (t, server, got) => 
 
 	const {body} = await got.post({
 		headers: {
-			'content-type': 'custom',
+			'content-type': 'custom'
 		},
 		form: {
-			a: 1,
-		},
+			a: 1
+		}
 	});
 	const headers = JSON.parse(body);
 	t.is(headers['content-type'], 'custom');
@@ -147,9 +144,9 @@ test('form-data manual `content-type` header', withServer, async (t, server, got
 	form.append('a', 'b');
 	const {body} = await got.post({
 		headers: {
-			'content-type': 'custom',
+			'content-type': 'custom'
 		},
-		body: form,
+		body: form
 	});
 	const headers = JSON.parse(body);
 	t.is(headers['content-type'], 'custom');
@@ -161,7 +158,7 @@ test('form-data automatic `content-type` header', withServer, async (t, server, 
 	const form = new FormData();
 	form.append('a', 'b');
 	const {body} = await got.post({
-		body: form,
+		body: form
 	});
 	const headers = JSON.parse(body);
 	t.is(headers['content-type'], `multipart/form-data; boundary=${form.getBoundary()}`);
@@ -177,51 +174,16 @@ test('form-data sets `content-length` header', withServer, async (t, server, got
 	t.is(headers['content-length'], '157');
 });
 
-test('sets `content-type` header for spec-compliant FormData', withServer, async (t, server, got) => {
-	server.post('/', echoHeaders);
-
-	const form = new FormDataNode();
-	form.set('a', 'b');
-	const {body} = await got.post({body: form});
-	const headers = JSON.parse(body);
-	t.true((headers['content-type'] as string).startsWith('multipart/form-data'));
-});
-
-test('sets `content-length` header for spec-compliant FormData', withServer, async (t, server, got) => {
-	server.post('/', echoHeaders);
-
-	const form = new FormDataNode();
-	form.set('a', 'b');
-	const encoder = new FormDataEncoder(form);
-	const {body} = await got.post({body: form});
-	const headers = JSON.parse(body);
-	t.is(headers['content-length'], encoder.headers['Content-Length']);
-});
-
-test('manual `content-type` header should be allowed with spec-compliant FormData', withServer, async (t, server, got) => {
-	server.post('/', echoHeaders);
-
-	const form = new FormDataNode();
-	form.set('a', 'b');
-	const {body} = await got.post({
-		headers: {
-			'content-type': 'custom',
-		},
-		body: form,
-	});
-	const headers = JSON.parse(body);
-	t.is(headers['content-type'], 'custom');
-});
-
-test('stream as `options.body` does not set `content-length` header', withServer, async (t, server, got) => {
+test('stream as `options.body` sets `content-length` header', withServer, async (t, server, got) => {
 	server.post('/', echoHeaders);
 
 	const fixture = path.resolve('test/fixtures/stream-content-length');
+	const {size} = await promisify(fs.stat)(fixture);
 	const {body} = await got.post({
-		body: fs.createReadStream(fixture),
+		body: fs.createReadStream(fixture)
 	});
 	const headers = JSON.parse(body);
-	t.is(headers['content-length'], undefined);
+	t.is(Number(headers['content-length']), size);
 });
 
 test('buffer as `options.body` sets `content-length` header', withServer, async (t, server, got) => {
@@ -229,7 +191,7 @@ test('buffer as `options.body` sets `content-length` header', withServer, async 
 
 	const buffer = Buffer.from('unicorn');
 	const {body} = await got.post({
-		body: buffer,
+		body: buffer
 	});
 	const headers = JSON.parse(body);
 	t.is(Number(headers['content-length']), buffer.length);
@@ -239,11 +201,11 @@ test('throws on null value headers', async t => {
 	await t.throwsAsync(got({
 		url: 'https://example.com',
 		headers: {
-			// @ts-expect-error For testing purposes
-			'user-agent': null,
-		},
+			// @ts-expect-error Testing purposes
+			'user-agent': null
+		}
 	}), {
-		message: 'Use `undefined` instead of `null` to delete the `user-agent` header',
+		message: 'Use `undefined` instead of `null` to delete the `user-agent` header'
 	});
 });
 
@@ -252,8 +214,8 @@ test('removes undefined value headers', withServer, async (t, server, got) => {
 
 	const {body} = await got({
 		headers: {
-			'user-agent': undefined,
-		},
+			'user-agent': undefined
+		}
 	});
 	const headers = JSON.parse(body);
 	t.is(headers['user-agent'], undefined);
@@ -262,15 +224,12 @@ test('removes undefined value headers', withServer, async (t, server, got) => {
 test('non-existent headers set to undefined are omitted', withServer, async (t, server, got) => {
 	server.get('/', echoHeaders);
 
-	const fixtureHeaders = {
-		blah: undefined,
-	} as const;
-
 	const {body} = await got({
-		headers: fixtureHeaders,
+		headers: {
+			blah: undefined
+		}
 	});
-
-	const headers = JSON.parse(body) as typeof fixtureHeaders;
+	const headers = JSON.parse(body);
 	t.false(Reflect.has(headers, 'blah'));
 });
 
@@ -299,20 +258,4 @@ test('strip port in host header if implicit standard port & protocol (HTTP)', as
 test('strip port in host header if implicit standard port & protocol (HTTPS)', async t => {
 	const body = await got('https://httpbin.org/headers').json<{headers: Headers}>();
 	t.is(body.headers.Host, 'httpbin.org');
-});
-
-test('correctly encodes authorization header', withServer, async (t, server, got) => {
-	server.get('/', echoHeaders);
-
-	const {authorization} = await got('', {username: 'test@'}).json<{authorization: string}>();
-
-	t.is(authorization, `Basic ${Buffer.from('test@:').toString('base64')}`);
-});
-
-test('url passes if credentials contain special characters', withServer, async (t, server, got) => {
-	server.get('/', echoHeaders);
-
-	const {authorization} = await got('', {password: 't$es%t'}).json<{authorization: string}>();
-
-	t.is(authorization, `Basic ${Buffer.from(':t$es%t').toString('base64')}`);
 });

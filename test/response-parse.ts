@@ -1,9 +1,8 @@
-import {Buffer} from 'node:buffer';
 import test from 'ava';
-import type {Handler} from 'express';
-import getStream from 'get-stream';
-import {HTTPError, ParseError} from '../source/index.js';
-import withServer from './helpers/with-server.js';
+import {Handler} from 'express';
+import getStream = require('get-stream');
+import {HTTPError, ParseError} from '../source';
+import withServer from './helpers/with-server';
 
 const dog = {data: 'dog'};
 const jsonResponse = JSON.stringify(dog);
@@ -88,7 +87,10 @@ test('throws an error on invalid response type', withServer, async (t, server, g
 
 	// @ts-expect-error Error tests
 	const error = await t.throwsAsync<ParseError>(got({responseType: 'invalid'}));
-	t.is(error?.message, 'Invalid `responseType` option: invalid');
+	t.regex(error.message, /^Unknown body type 'invalid'/);
+	t.true(error.message.includes(error.options.url.hostname));
+	t.is(error.options.url.pathname, '/');
+	t.is(error.code, 'ERR_BODY_PARSE_FAILURE');
 });
 
 test('wraps parsing errors', withServer, async (t, server, got) => {
@@ -96,10 +98,10 @@ test('wraps parsing errors', withServer, async (t, server, got) => {
 		response.end('/');
 	});
 
-	const error = await t.throwsAsync<ParseError>(got({responseType: 'json'}), {instanceOf: ParseError});
-	t.true(error?.message.includes((error.options.url as URL).hostname));
-	t.is((error?.options.url as URL).pathname, '/');
-	t.is(error?.code, 'ERR_BODY_PARSE_FAILURE');
+	const error = await t.throwsAsync<ParseError>(got({responseType: 'json'}), {instanceOf: got.ParseError});
+	t.true(error.message.includes(error.options.url.hostname));
+	t.is(error.options.url.pathname, '/');
+	t.is(error.code, 'ERR_BODY_PARSE_FAILURE');
 });
 
 test('parses non-200 responses', withServer, async (t, server, got) => {
@@ -108,8 +110,8 @@ test('parses non-200 responses', withServer, async (t, server, got) => {
 		response.end(jsonResponse);
 	});
 
-	const error = await t.throwsAsync<HTTPError>(got({responseType: 'json', retry: {limit: 0}}), {instanceOf: HTTPError});
-	t.deepEqual(error?.response.body, dog);
+	const error = await t.throwsAsync<HTTPError>(got({responseType: 'json', retry: 0}), {instanceOf: HTTPError});
+	t.deepEqual(error.response.body, dog);
 });
 
 test('ignores errors on invalid non-200 responses', withServer, async (t, server, got) => {
@@ -118,13 +120,13 @@ test('ignores errors on invalid non-200 responses', withServer, async (t, server
 		response.end('Internal error');
 	});
 
-	const error = await t.throwsAsync<HTTPError>(got({responseType: 'json', retry: {limit: 0}}), {
-		instanceOf: HTTPError,
-		message: 'Response code 500 (Internal Server Error)',
+	const error = await t.throwsAsync<HTTPError>(got({responseType: 'json', retry: 0}), {
+		instanceOf: got.HTTPError,
+		message: 'Response code 500 (Internal Server Error)'
 	});
 
-	t.is(error?.response.body, 'Internal error');
-	t.is((error?.options.url as URL).pathname, '/');
+	t.is(error.response.body, 'Internal error');
+	t.is(error.options.url.pathname, '/');
 });
 
 test('parse errors have `response` property', withServer, async (t, server, got) => {
@@ -134,9 +136,9 @@ test('parse errors have `response` property', withServer, async (t, server, got)
 
 	const error = await t.throwsAsync<ParseError>(got({responseType: 'json'}), {instanceOf: ParseError});
 
-	t.is(error?.response.statusCode, 200);
-	t.is(error?.response.body, '/');
-	t.is(error?.code, 'ERR_BODY_PARSE_FAILURE');
+	t.is(error.response.statusCode, 200);
+	t.is(error.response.body, '/');
+	t.is(error.code, 'ERR_BODY_PARSE_FAILURE');
 });
 
 test('sets correct headers', withServer, async (t, server, got) => {
@@ -187,8 +189,8 @@ test('shortcuts throw ParseErrors', withServer, async (t, server, got) => {
 
 	await t.throwsAsync(got('').json(), {
 		instanceOf: ParseError,
-		message: /^Unexpected token o in JSON at position 1 in/,
 		code: 'ERR_BODY_PARSE_FAILURE',
+		message: /^Unexpected token o in JSON at position 1 in/
 	});
 });
 
@@ -212,15 +214,15 @@ test('shortcuts result properly when retrying in afterResponse', withServer, asy
 					if (response.statusCode === 401) {
 						return retryWithMergedOptions({
 							headers: {
-								token: 'unicorn',
-							},
+								token: 'unicorn'
+							}
 						});
 					}
 
 					return response;
-				},
-			],
-		},
+				}
+			]
+		}
 	});
 
 	const json = await promise.json<{hello: string}>();
@@ -250,6 +252,6 @@ test('JSON response custom parser', withServer, async (t, server, got) => {
 
 	t.deepEqual((await got({
 		responseType: 'json',
-		parseJson: text => ({...JSON.parse(text), custom: 'parser'}),
+		parseJson: text => ({...JSON.parse(text), custom: 'parser'})
 	})).body, {...dog, custom: 'parser'});
 });

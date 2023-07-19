@@ -2,21 +2,15 @@
 	"extends": "@sindresorhus/tsconfig",
 	"compilerOptions": {
 		"outDir": "dist",
-		"target": "es2020", // Node.js 14
+		"target": "es2018", // Node.js 10
 		"lib": [
-			"es2020"
-		],
-		"noPropertyAccessFromIndexSignature": false,
-		"isolatedModules": true
+			"es2018",
+			"es2019.string"
+		]
 	},
 	"include": [
 		"source",
 		"test",
 		"benchmark"
-	],
-	"ts-node": {
-		"transpileOnly": true,
-		"files": true,
-		"experimentalResolver": true
-	}
+	]
 }

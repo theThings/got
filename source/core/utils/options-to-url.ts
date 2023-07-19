@@ -1,5 +1,7 @@
-// eslint-disable-next-line @typescript-eslint/naming-convention
-export type URLOptions = {
+/* istanbul ignore file: deprecated */
+import {URL} from 'url';
+
+export interface URLOptions {
 	href?: string;
 	protocol?: string;
 	host?: string;
@@ -9,7 +11,7 @@ export type URLOptions = {
 	search?: string;
 	searchParams?: unknown;
 	path?: string;
-};
+}
 
 const keys: Array<Exclude<keyof URLOptions, 'searchParams' | 'path'>> = [
 	'protocol',
@@ -17,10 +19,10 @@ const keys: Array<Exclude<keyof URLOptions, 'searchParams' | 'path'>> = [
 	'hostname',
 	'port',
 	'pathname',
-	'search',
+	'search'
 ];
 
-export default function optionsToUrl(origin: string, options: URLOptions): URL {
+export default (origin: string, options: URLOptions): URL => {
 	if (options.path) {
 		if (options.pathname) {
 			throw new TypeError('Parameters `path` and `pathname` are mutually exclusive.');
@@ -68,4 +70,4 @@ export default function optionsToUrl(origin: string, options: URLOptions): URL {
 	}
 
 	return url;
-}
+};

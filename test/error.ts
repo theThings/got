@@ -1,16 +1,14 @@
-import {Buffer} from 'node:buffer';
-import {promisify} from 'node:util';
-import net from 'node:net';
-import http from 'node:http';
-import stream from 'node:stream';
-import {pipeline as streamPipeline} from 'node:stream/promises';
+import {promisify} from 'util';
+import net = require('net');
+import http = require('http');
+import stream = require('stream');
 import test from 'ava';
-import getStream from 'get-stream';
+import getStream = require('get-stream');
 import is from '@sindresorhus/is';
-import got, {RequestError, HTTPError, TimeoutError} from '../source/index.js';
-import type Request from '../source/core/index.js';
-import withServer from './helpers/with-server.js';
-import invalidUrl from './helpers/invalid-url.js';
+import got, {RequestError, HTTPError, TimeoutError} from '../source';
+import withServer from './helpers/with-server';
+
+const pStreamPipeline = promisify(stream.pipeline);
 
 test('properties', withServer, async (t, server, got) => {
 	server.get('/', (_request, response) => {
@@ -20,12 +18,16 @@ test('properties', withServer, async (t, server, got) => {
 
 	const url = new URL(server.url);
 
-	const error = (await t.throwsAsync<HTTPError>(got('')))!;
+	const error = await t.throwsAsync<HTTPError>(got(''));
 	t.truthy(error);
 	t.truthy(error.response);
 	t.truthy(error.options);
-	t.true(Object.prototype.propertyIsEnumerable.call(error, 'options'));
-	t.false(Object.prototype.propertyIsEnumerable.call(error, 'response'));
+	t.false({}.propertyIsEnumerable.call(error, 'options'));
+	t.false({}.propertyIsEnumerable.call(error, 'response'));
+	// This fails because of TS 3.7.2 useDefineForClassFields
+	// Class fields will always be initialized, even though they are undefined
+	// A test to check for undefined is in place below
+	// t.false({}.hasOwnProperty.call(error, 'code'));
 	t.is(error.code, 'ERR_NON_2XX_3XX_RESPONSE');
 	t.is(error.message, 'Response code 404 (Not Found)');
 	t.deepEqual(error.options.url, url);
@@ -34,28 +36,24 @@ test('properties', withServer, async (t, server, got) => {
 });
 
 test('catches dns errors', async t => {
-	const error = (await t.throwsAsync<RequestError>(got('http://doesntexist', {retry: {limit: 0}})))!;
+	const error = await t.throwsAsync<RequestError>(got('http://doesntexist', {retry: 0}));
 	t.truthy(error);
 	t.regex(error.message, /ENOTFOUND|EAI_AGAIN/);
-	t.is((error.options.url as URL).host, 'doesntexist');
+	t.is(error.options.url.host, 'doesntexist');
 	t.is(error.options.method, 'GET');
-	t.true(['ENOTFOUND', 'EAI_AGAIN'].includes(error.code));
+	t.is(error.code, 'ENOTFOUND');
 });
 
 test('`options.body` form error message', async t => {
 	// @ts-expect-error Error tests
-	await t.throwsAsync(got.post('https://example.com', {body: Buffer.from('test'), form: ''}),
-		{
-			instanceOf: RequestError,
-			message: 'Expected value which is `predicate returns truthy for any value`, received values of types `string`.',
-		},
-		// {message: 'The `body`, `json` and `form` options are mutually exclusive'}
-	);
+	await t.throwsAsync(got.post('https://example.com', {body: Buffer.from('test'), form: ''}), {
+		message: 'The `body`, `json` and `form` options are mutually exclusive'
+	});
 });
 
 test('no plain object restriction on json body', withServer, async (t, server, got) => {
 	server.post('/body', async (request, response) => {
-		await streamPipeline(request, response);
+		await pStreamPipeline(request, response);
 	});
 
 	class CustomObject {
@@ -73,13 +71,9 @@ test('default status message', withServer, async (t, server, got) => {
 		response.end('body');
 	});
 
-	const error = await t.throwsAsync<HTTPError>(got(''),
-		{
-			instanceOf: HTTPError,
-			message: 'Response code 400 (Bad Request)',
-		});
-	t.is(error?.response.statusCode, 400);
-	t.is(error?.response.statusMessage, 'Bad Request');
+	const error = await t.throwsAsync<HTTPError>(got(''));
+	t.is(error.response.statusCode, 400);
+	t.is(error.response.statusMessage, 'Bad Request');
 });
 
 test('custom status message', withServer, async (t, server, got) => {
@@ -89,13 +83,9 @@ test('custom status message', withServer, async (t, server, got) => {
 		response.end('body');
 	});
 
-	const error = await t.throwsAsync<HTTPError>(got(''),
-		{
-			instanceOf: HTTPError,
-			message: 'Response code 400 (Something Exploded)',
-		});
-	t.is(error?.response.statusCode, 400);
-	t.is(error?.response.statusMessage, 'Something Exploded');
+	const error = await t.throwsAsync<HTTPError>(got(''));
+	t.is(error.response.statusCode, 400);
+	t.is(error.response.statusMessage, 'Something Exploded');
 });
 
 test('custom body', withServer, async (t, server, got) => {
@@ -104,13 +94,9 @@ test('custom body', withServer, async (t, server, got) => {
 		response.end('not');
 	});
 
-	const error = await t.throwsAsync<HTTPError>(got(''),
-		{
-			instanceOf: HTTPError,
-			message: 'Response code 404 (Not Found)',
-		});
-	t.is(error?.response.statusCode, 404);
-	t.is(error?.response.body, 'not');
+	const error = await t.throwsAsync<HTTPError>(got(''));
+	t.is(error.response.statusCode, 404);
+	t.is(error.response.body, 'not');
 });
 
 test('contains Got options', withServer, async (t, server, got) => {
@@ -119,45 +105,34 @@ test('contains Got options', withServer, async (t, server, got) => {
 		response.end();
 	});
 
-	const options = {
-		context: {
-			foo: 'bar',
-		},
-	} as const;
+	const options: {agent: false} = {
+		agent: false
+	};
 
-	const error = await t.throwsAsync<HTTPError>(got(options),
-		{
-			instanceOf: HTTPError,
-			message: 'Response code 404 (Not Found)',
-		});
-	t.is(error?.response.statusCode, 404);
-	t.is(error?.options.context.foo, options.context.foo);
+	const error = await t.throwsAsync<RequestError>(got(options));
+	t.is(error.options.agent, options.agent);
 });
 
-test.failing('empty status message is overriden by the default one', withServer, async (t, server, got) => {
+test('empty status message is overriden by the default one', withServer, async (t, server, got) => {
 	server.get('/', (_request, response) => {
 		response.writeHead(400, '');
 		response.end('body');
 	});
 
-	const error = await t.throwsAsync<HTTPError>(got(''),
-		{
-			instanceOf: HTTPError,
-			message: 'Response code 400 (Bad Request)',
-		});
-	t.is(error?.response.statusCode, 400);
-	t.is(error?.response.statusMessage, http.STATUS_CODES[400]);
+	const error = await t.throwsAsync<HTTPError>(got(''));
+	t.is(error.response.statusCode, 400);
+	t.is(error.response.statusMessage, http.STATUS_CODES[400]);
 });
 
 test('`http.request` error', async t => {
 	await t.throwsAsync(got('https://example.com', {
-		request() {
+		request: () => {
 			throw new TypeError('The header content contains invalid characters');
-		},
+		}
 	}), {
-		instanceOf: RequestError,
-		message: 'The header content contains invalid characters',
+		instanceOf: got.RequestError,
 		code: 'ERR_GOT_REQUEST_ERROR',
+		message: 'The header content contains invalid characters'
 	});
 });
 
@@ -166,13 +141,13 @@ test('`http.request` pipe error', async t => {
 
 	await t.throwsAsync(got('https://example.com', {
 		// @ts-expect-error Error tests
-		request() {
+		request: () => {
 			const proxy = new stream.PassThrough();
 
 			const anyProxy = proxy as any;
 			anyProxy.socket = {
 				remoteAddress: '',
-				prependOnceListener() {},
+				prependOnceListener: () => {}
 			};
 
 			anyProxy.headers = {};
@@ -188,55 +163,28 @@ test('`http.request` pipe error', async t => {
 
 			return proxy;
 		},
-		throwHttpErrors: false,
+		throwHttpErrors: false
 	}), {
-		instanceOf: RequestError,
-		message,
+		instanceOf: got.RequestError,
+		message
 	});
 });
 
 test('`http.request` error through CacheableRequest', async t => {
 	await t.throwsAsync(got('https://example.com', {
-		request() {
+		request: () => {
 			throw new TypeError('The header content contains invalid characters');
 		},
-		cache: new Map(),
+		cache: new Map()
 	}), {
-		instanceOf: RequestError,
-		message: 'The header content contains invalid characters',
-	});
-});
-
-test('returns a stream even if normalization fails', async t => {
-	const stream = got('https://example.com', {
-		isStream: true,
-		// @ts-expect-error Testing purposes
-		hooks: false,
-	}) as unknown as Request;
-
-	await t.throwsAsync(getStream(stream), {
-		instanceOf: RequestError,
-		message: 'Expected value which is `Object`, received value of type `boolean`.',
+		instanceOf: got.RequestError,
+		message: 'The header content contains invalid characters'
 	});
 });
 
 test('normalization errors using convenience methods', async t => {
 	const url = 'undefined/https://example.com';
-
-	{
-		const error = await t.throwsAsync(got(url).json());
-		invalidUrl(t, error!, url);
-	}
-
-	{
-		const error = await t.throwsAsync(got(url).text());
-		invalidUrl(t, error!, url);
-	}
-
-	{
-		const error = await t.throwsAsync(got(url).buffer());
-		invalidUrl(t, error!, url);
-	}
+	await t.throwsAsync(got(url).json().text().buffer(), {message: `Invalid URL: ${url}`});
 });
 
 test('errors can have request property', withServer, async (t, server, got) => {
@@ -247,8 +195,8 @@ test('errors can have request property', withServer, async (t, server, got) => {
 
 	const error = await t.throwsAsync<HTTPError>(got(''));
 
-	t.truthy(error?.response);
-	t.truthy(error?.request.downloadProgress);
+	t.truthy(error.response);
+	t.truthy(error.request.downloadProgress);
 });
 
 test('promise does not hang on timeout on HTTP error', withServer, async (t, server, got) => {
@@ -258,12 +206,10 @@ test('promise does not hang on timeout on HTTP error', withServer, async (t, ser
 	});
 
 	await t.throwsAsync(got({
-		timeout: {
-			request: 100,
-		},
+		timeout: 100
 	}), {
 		instanceOf: TimeoutError,
-		code: 'ETIMEDOUT',
+		code: 'ETIMEDOUT'
 	});
 });
 
@@ -273,6 +219,7 @@ test('no uncaught parse errors', async t => {
 	const listen = promisify(server.listen.bind(server));
 	const close = promisify(server.close.bind(server));
 
+	// @ts-expect-error TS is sooo dumb. It doesn't need an argument at all.
 	await listen();
 
 	server.on('connection', socket => {
@@ -283,39 +230,12 @@ test('no uncaught parse errors', async t => {
 			'',
 			'0',
 			'',
-			'',
+			''
 		].join('\r\n'));
 	});
 
 	await t.throwsAsync(got.head(`http://localhost:${(server.address() as net.AddressInfo).port}`), {
-		instanceOf: RequestError,
-		message: /^Parse Error/,
-	});
-
-	await close();
-});
-
-test('no uncaught parse errors #2', async t => {
-	const server = net.createServer();
-
-	const listen = promisify(server.listen.bind(server));
-	const close = promisify(server.close.bind(server));
-
-	await listen();
-
-	server.on('connection', socket => {
-		socket.resume();
-		socket.write([
-			'HTTP/1.1 200 OK',
-			'content-length: 1',
-			'',
-			'0a',
-		].join('\r\n'));
-	});
-
-	await t.throwsAsync(got(`http://localhost:${(server.address() as net.AddressInfo).port}`), {
-		instanceOf: RequestError,
-		message: /^Parse Error/,
+		message: /^Parse Error/
 	});
 
 	await close();
@@ -326,27 +246,26 @@ test('no uncaught parse errors #2', async t => {
 // eslint-disable-next-line ava/no-skip-test
 test.skip('the old stacktrace is recovered', async t => {
 	const error = await t.throwsAsync(got('https://example.com', {
-		request() {
+		request: () => {
 			throw new Error('foobar');
-		},
+		}
 	}));
 
-	t.true(error?.stack!.includes('at Object.request'));
+	t.true(error.stack!.includes('at Object.request'));
 
 	// The first `at get` points to where the error was wrapped,
 	// the second `at get` points to the real cause.
-	t.not(error?.stack!.indexOf('at get'), error?.stack!.lastIndexOf('at get'));
+	t.not(error.stack!.indexOf('at get'), error.stack!.lastIndexOf('at get'));
 });
 
 test.serial('custom stack trace', withServer, async (t, _server, got) => {
-	// eslint-disable-next-line @typescript-eslint/naming-convention
 	const ErrorCaptureStackTrace = Error.captureStackTrace;
 
 	const enable = () => {
 		Error.captureStackTrace = (target: {stack: any}) => {
 			target.stack = [
 				'line 1',
-				'line 2',
+				'line 2'
 			];
 		};
 	};
@@ -361,7 +280,7 @@ test.serial('custom stack trace', withServer, async (t, _server, got) => {
 		stream.destroy(new Error('oh no'));
 
 		const caught = await t.throwsAsync(getStream(stream));
-		t.is(is(caught?.stack), 'string');
+		t.is(is(caught.stack), 'string');
 	}
 
 	// Passing a custom error
@@ -374,7 +293,7 @@ test.serial('custom stack trace', withServer, async (t, _server, got) => {
 		stream.destroy(error);
 
 		const caught = await t.throwsAsync(getStream(stream));
-		t.is(is(caught?.stack), 'string');
+		t.is(is(caught.stack), 'string');
 	}
 
 	// Custom global behavior
@@ -386,7 +305,7 @@ test.serial('custom stack trace', withServer, async (t, _server, got) => {
 		stream.destroy(error);
 
 		const caught = await t.throwsAsync(getStream(stream));
-		t.is(is(caught?.stack), 'Array');
+		t.is(is(caught.stack), 'Array');
 
 		disable();
 	}
@@ -400,7 +319,7 @@ test.serial('custom stack trace', withServer, async (t, _server, got) => {
 		stream.destroy(error);
 
 		const caught = await t.throwsAsync(getStream(stream));
-		t.is(is(caught?.stack), 'Array');
+		t.is(is(caught.stack), 'Array');
 
 		disable();
 	}

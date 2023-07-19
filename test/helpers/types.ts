@@ -1,16 +1,15 @@
-import type {Server} from 'node:http';
-// @ts-expect-error Fails to locate ../types/create-test-server/index.d.ts
-import type {TestServer} from 'create-test-server';
+import {Server} from 'http';
+import {TestServer} from 'create-test-server';
+import * as FakeTimers from '@sinonjs/fake-timers';
 
-export type ExtendedHttpServer = {
+export interface ExtendedHttpServer extends Server {
 	socketPath: string;
-} & Server;
+}
 
-export type ExtendedTestServer = {
+export interface ExtendedTestServer extends TestServer {
 	hostname: string;
 	sslHostname: string;
-} & TestServer;
+}
 
-// https://github.com/sinonjs/fake-timers/pull/386
-export type InstalledClock = any;
-export type GlobalClock = any;
+export type InstalledClock = ReturnType<typeof FakeTimers.install>;
+export type GlobalClock = InstalledClock | FakeTimers.NodeClock;

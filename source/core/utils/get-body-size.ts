@@ -1,10 +1,12 @@
-import {Buffer} from 'node:buffer';
-import {promisify} from 'node:util';
-import type {ClientRequestArgs} from 'node:http';
+import {ReadStream, stat} from 'fs';
+import {promisify} from 'util';
+import {ClientRequestArgs} from 'http';
 import is from '@sindresorhus/is';
-import isFormData from './is-form-data.js';
+import isFormData from './is-form-data';
 
-export default async function getBodySize(body: unknown, headers: ClientRequestArgs['headers']): Promise<number | undefined> {
+const statAsync = promisify(stat);
+
+export default async (body: unknown, headers: ClientRequestArgs['headers']): Promise<number | undefined> => {
 	if (headers && 'content-length' in headers) {
 		return Number(headers['content-length']);
 	}
@@ -25,5 +27,15 @@ export default async function getBodySize(body: unknown, headers: ClientRequestA
 		return promisify(body.getLength.bind(body))();
 	}
 
+	if (body instanceof ReadStream) {
+		const {size} = await statAsync(body.path);
+
+		if (size === 0) {
+			return undefined;
+		}
+
+		return size;
+	}
+
 	return undefined;
-}
+};

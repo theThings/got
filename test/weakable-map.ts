@@ -1,5 +1,5 @@
 import test from 'ava';
-import WeakableMap from '../source/core/utils/weakable-map.js';
+import WeakableMap from '../source/core/utils/weakable-map';
 
 test('works as expected', t => {
 	const weakable = new WeakableMap();

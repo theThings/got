@@ -1,42 +1,26 @@
-import got from '../../dist/source/index.js';
+'use strict';
+const got = require('../..');
+const package = require('../../package');
 
-const packageJson = {
-	name: 'gh-got',
-	version: '12.0.0'
-};
-
-const getRateLimit = headers => ({
-	limit: Number.parseInt(headers['x-ratelimit-limit'], 10),
-	remaining: Number.parseInt(headers['x-ratelimit-remaining'], 10),
-	reset: new Date(Number.parseInt(headers['x-ratelimit-reset'], 10) * 1000)
+const getRateLimit = (headers) => ({
+	limit: parseInt(headers['x-ratelimit-limit'], 10),
+	remaining: parseInt(headers['x-ratelimit-remaining'], 10),
+	reset: new Date(parseInt(headers['x-ratelimit-reset'], 10) * 1000)
 });
 
 const instance = got.extend({
 	prefixUrl: 'https://api.github.com',
 	headers: {
 		accept: 'application/vnd.github.v3+json',
-		'user-agent': `${packageJson.name}/${packageJson.version}`
+		'user-agent': `${package.name}/${package.version}`
 	},
 	responseType: 'json',
-	context: {
-		token: process.env.GITHUB_TOKEN,
-	},
-	hooks: {
-		init: [
-			(raw, options) => {
-				if ('token' in raw) {
-					options.context.token = raw.token;
-					delete raw.token;
-				}
-			}
-		]
-	},
+	token: process.env.GITHUB_TOKEN,
 	handlers: [
 		(options, next) => {
 			// Authorization
-			const {token} = options.context;
-			if (token && !options.headers.authorization) {
-				options.headers.authorization = `token ${token}`;
+			if (options.token && !options.headers.authorization) {
+				options.headers.authorization = `token ${options.token}`;
 			}
 
 			// Don't touch streams
@@ -74,4 +58,4 @@ const instance = got.extend({
 	]
 });
 
-export default instance;
+module.exports = instance;

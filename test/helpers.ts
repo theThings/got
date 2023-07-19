@@ -1,7 +1,6 @@
 import test from 'ava';
-import got, {HTTPError} from '../source/index.js';
-import withServer from './helpers/with-server.js';
-import invalidUrl from './helpers/invalid-url.js';
+import got, {HTTPError} from '../source';
+import withServer from './helpers/with-server';
 
 test('works', withServer, async (t, server) => {
 	server.get('/', (_request, response) => {
@@ -13,12 +12,10 @@ test('works', withServer, async (t, server) => {
 		response.end('not found');
 	});
 
-	const {body} = await got.get(server.url);
-	t.is(body, 'ok');
+	t.is((await got.get(server.url)).body, 'ok');
 
 	const error = await t.throwsAsync<HTTPError>(got.get(`${server.url}/404`), {instanceOf: HTTPError});
-	t.is(error?.response.body, 'not found');
+	t.is(error.response.body, 'not found');
 
-	const secondError = await t.throwsAsync(got.get('.com', {retry: {limit: 0}}));
-	invalidUrl(t, secondError!, '.com');
+	await t.throwsAsync(got.get('.com', {retry: 0}), {message: 'Invalid URL: .com'});
 });

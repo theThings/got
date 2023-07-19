@@ -1,7 +1,7 @@
 import test from 'ava';
-import type {Handler} from 'express';
-import got, {type BeforeRequestHook, type Got, type Headers} from '../source/index.js';
-import withServer from './helpers/with-server.js';
+import {Handler} from 'express';
+import got, {BeforeRequestHook, Got, Headers, NormalizedOptions} from '../source';
+import withServer from './helpers/with-server';
 
 const echoHeaders: Handler = (request, response) => {
 	response.end(JSON.stringify(request.headers));
@@ -28,8 +28,8 @@ test('merges default handlers & custom handlers', withServer, async (t, server) 
 			(options, next) => {
 				options.headers.cat = 'meow';
 				return next(options);
-			},
-		],
+			}
+		]
 	});
 	const merged = instanceA.extend(instanceB);
 
@@ -83,24 +83,24 @@ test('hooks are merged', t => {
 		beforeRequest: [
 			options => {
 				options.headers.dog = 'woof';
-			},
-		],
+			}
+		]
 	}});
 	const instanceB = got.extend({hooks: {
 		beforeRequest: [
 			options => {
 				options.headers.cat = 'meow';
-			},
-		],
+			}
+		]
 	}});
 
 	const merged = instanceA.extend(instanceB);
-	t.deepEqual(getBeforeRequestHooks(merged), [...getBeforeRequestHooks(instanceA), ...getBeforeRequestHooks(instanceB)]);
+	t.deepEqual(getBeforeRequestHooks(merged), getBeforeRequestHooks(instanceA).concat(getBeforeRequestHooks(instanceB)));
 });
 
 test('default handlers are not duplicated', t => {
 	const instance = got.extend(got);
-	t.is(instance.defaults.handlers.length, 0);
+	t.is(instance.defaults.handlers.length, 1);
 });
 
 test('URL is not polluted', withServer, async (t, server, got) => {
@@ -109,7 +109,7 @@ test('URL is not polluted', withServer, async (t, server, got) => {
 	});
 
 	await got({
-		username: 'foo',
+		username: 'foo'
 	});
 
 	const {options: normalizedOptions} = (await got({})).request;
@@ -120,42 +120,42 @@ test('URL is not polluted', withServer, async (t, server, got) => {
 test('merging instances with HTTPS options', t => {
 	const instanceA = got.extend({https: {
 		rejectUnauthorized: true,
-		certificate: 'FIRST',
+		certificate: 'FIRST'
 	}});
 	const instanceB = got.extend({https: {
-		certificate: 'SECOND',
+		certificate: 'SECOND'
 	}});
 
 	const merged = instanceA.extend(instanceB);
 
-	t.true(merged.defaults.options.https.rejectUnauthorized);
-	t.is(merged.defaults.options.https.certificate, 'SECOND');
+	t.true(merged.defaults.options.https?.rejectUnauthorized);
+	t.is(merged.defaults.options.https?.certificate, 'SECOND');
 });
 
 test('merging instances with HTTPS options undefined', t => {
 	const instanceA = got.extend({https: {
 		rejectUnauthorized: true,
-		certificate: 'FIRST',
+		certificate: 'FIRST'
 	}});
 	const instanceB = got.extend({https: {
-		certificate: undefined,
+		certificate: undefined
 	}});
 
 	const merged = instanceA.extend(instanceB);
 
-	t.true(merged.defaults.options.https.rejectUnauthorized);
-	t.is(merged.defaults.options.https.certificate, undefined);
+	t.true(merged.defaults.options.https?.rejectUnauthorized);
+	t.is(merged.defaults.options.https?.certificate, undefined);
 });
 
 test('accepts options for promise API', t => {
 	got.extend({
 		hooks: {
 			beforeRequest: [
-				options => {
+				(options: NormalizedOptions): void => {
 					options.responseType = 'buffer';
-				},
-			],
-		},
+				}
+			]
+		}
 	});
 
 	t.pass();
@@ -169,8 +169,9 @@ test('merging `prefixUrl`', t => {
 	const mergedAonB = instanceB.extend(instanceA);
 	const mergedBonA = instanceA.extend(instanceB);
 
-	t.is(mergedAonB.defaults.options.prefixUrl, prefixUrl);
+	t.is(mergedAonB.defaults.options.prefixUrl, '');
 	t.is(mergedBonA.defaults.options.prefixUrl, prefixUrl);
 
 	t.is(instanceB.extend({}).defaults.options.prefixUrl, prefixUrl);
+	t.is(instanceB.extend({prefixUrl: undefined}).defaults.options.prefixUrl, prefixUrl);
 });
